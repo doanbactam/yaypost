@@ -11,6 +11,7 @@ import type {
   Media,
   OperatorRun,
   OperatorSettings,
+  OperatorSourceCheck,
   OperatorStatus,
   PlatformId,
   Post,
@@ -341,4 +342,6 @@ export const api = {
   stopOperatorRun: (id: string) => call<void>("POST", `/api/operator/runs/${id}/stop`),
   operatorSettings: () => call<OperatorSettings>("GET", "/api/operator/settings"),
   saveOperatorSettings: (body: Partial<Omit<OperatorSettings, "briefMissing">>) => call<OperatorSettings>("PUT", "/api/operator/settings", { body }),
+  checkOperatorSources: (sources: string[]) =>
+    call<{ sources: OperatorSourceCheck[] }>("POST", "/api/operator/sources/check", { body: { sources } }).then((r) => r.sources),
 };

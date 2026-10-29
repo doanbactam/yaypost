@@ -55,7 +55,8 @@ Then:
 | **Webhooks** | HMAC-signed (`X-Yaypost-Signature`), set up in Settings |
 
 No agent of your own? Turn on the **operator** (*Inbox → Operator*): Claude runs on a schedule from your brief, using
-the same tools and the same approval gate. Needs `ANTHROPIC_API_KEY` (or `ZAI_API_KEY`) in `.env`.
+the same tools and the same approval gate. Needs `ANTHROPIC_API_KEY` (or `ZAI_API_KEY`) in `.env`. It researches with
+the read-only tools of remote MCP servers you list (web search through Parallel by default; add Firecrawl or any other).
 
 ## Running it for real
 

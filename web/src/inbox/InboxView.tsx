@@ -10,6 +10,7 @@ import {
   CircleStop,
   ExternalLink,
   FileText,
+  Globe,
   Image as ImageIcon,
   Inbox,
   LoaderCircle,
@@ -17,9 +18,11 @@ import {
   MessageSquareReply,
   PenLine,
   Play,
+  Plus,
   Send,
   Settings2,
   Square,
+  X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AuditEntry, ControlState, Health, OperatorRun, OperatorSettings, Post } from "../../../shared/types.ts";
@@ -542,6 +545,7 @@ function OperatorSetup({ tz, onClose }: { tz: string; onClose: () => void }) {
         enabled: d.enabled,
         days: d.days,
         runAt: d.runAt,
+        ...(d.sources.join() !== saved?.sources.join() ? { sources: d.sources } : {}),
         // Only write the brief when it changed, or when there is no brief file yet.
         ...(d.brief !== saved?.brief || saved?.briefMissing ? { brief: d.brief } : {}),
       }),
@@ -597,6 +601,8 @@ function OperatorSetup({ tz, onClose }: { tz: string; onClose: () => void }) {
           {saved.briefMissing && <p className="mt-1.5 text-xs text-ink-3">Starting from the example. Make it yours, then save.</p>}
         </div>
 
+        <Sources urls={draft.sources} onChange={(sources) => set({ sources })} />
+
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className={cx(btn, "text-ink-2 hover:bg-subtle hover:text-ink")}>
             Cancel
@@ -609,6 +615,79 @@ function OperatorSetup({ tz, onClose }: { tz: string; onClose: () => void }) {
     </Dialog>
   );
 }
+
+/** Remote MCP servers whose read-only tools (web search, page reading…) the operator gets. */
+function Sources({ urls, onChange }: { urls: string[]; onChange: (urls: string[]) => void }) {
+  const [url, setUrl] = useState("");
+  const check = useMutation({ mutationFn: (list: string[]) => api.checkOperatorSources(list), onError: (e) => toastError("Couldn't check", e) });
+  const result = (u: string) => check.data?.find((r) => r.url === u);
+  const next = url.trim();
+  const add = () => {
+    if (!/^https?:\/\/[^\s/]+/.test(next) || urls.includes(next)) return;
+    onChange([...urls, next]);
+    setUrl("");
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Web tools (MCP servers)">
+        <Tip content="Web tools: MCP servers the operator can search and read the web with">
+          <Globe size={15} className="mr-0.5 text-ink-3" aria-label="Web tools" />
+        </Tip>
+        {urls.map((u) => {
+          const r = result(u);
+          return (
+            <Tip key={u} content={u}>
+              <span className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-canvas pr-1 pl-3 text-sm">
+                {r && <span className={cx("size-2 rounded-full", r.error ? "bg-red-500" : "bg-emerald-500")} />}
+                {new URL(u).hostname}
+                <button
+                  type="button"
+                  onClick={() => onChange(urls.filter((x) => x !== u))}
+                  aria-label={`Remove ${u}`}
+                  className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-subtle hover:text-ink"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            </Tip>
+          );
+        })}
+        <span className="flex h-8 items-center rounded-full border border-dashed border-line-strong pr-1 pl-3">
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+            placeholder="https://…/mcp"
+            aria-label="MCP server URL to add"
+            className="w-36 bg-transparent text-sm outline-none placeholder:text-ink-3"
+          />
+          <button type="button" onClick={add} aria-label="Add MCP server" className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-subtle hover:text-ink">
+            <Plus size={13} />
+          </button>
+        </span>
+        {urls.length > 0 && (
+          <button type="button" onClick={() => check.mutate(urls)} disabled={check.isPending} className={cx(btn, "text-ink-2 hover:bg-subtle hover:text-ink")}>
+            {check.isPending && <LoaderCircle size={13} className="animate-spin" />} Check
+          </button>
+        )}
+      </div>
+      {check.data?.some((r) => urls.includes(r.url)) && (
+        <ul className="space-y-0.5 pl-6 text-xs text-ink-3">
+          {check.data
+            .filter((r) => urls.includes(r.url))
+            .map((r) => (
+              <li key={r.url} className={cx(r.error && "text-red-600 dark:text-red-400")}>
+                <span className="font-medium">{r.name}</span> {r.error ?? (r.tools.length ? r.tools.join(", ") : "no read-only tools")}
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ---------- approval chats ----------
 
 

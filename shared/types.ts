@@ -282,6 +282,16 @@ export interface OperatorSettings {
   /** The brief, or the example to start from when there is none yet (briefMissing). */
   brief: string;
   briefMissing: boolean;
+  /** URLs of the remote MCP servers (web search…) the operator uses; headers and tool lists stay in yaypost.config.json. */
+  sources: string[];
+}
+
+/** A remote MCP server checked from the operator settings: the tools the operator would get from it. */
+export interface OperatorSourceCheck {
+  url: string;
+  name: string;
+  tools: string[];
+  error: string | null;
 }
 
 export interface ControlState {

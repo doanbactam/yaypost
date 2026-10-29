@@ -17,6 +17,15 @@ const SlotRule = z.union([
     .refine((r) => r.from <= r.to, '"from" must not be later than "to" (ranges can\'t cross midnight; split them into two rules)'),
 ]);
 
+const McpServer = z.object({
+  url: z.url({ protocol: /^https?$/ }),
+  headers: z.record(z.string(), z.string()).default({}),
+  tools: z.array(z.string()).optional(),
+});
+export type McpServerConfig = z.infer<typeof McpServer>;
+/** Parallel's free web search and fetch; PARALLEL_API_KEY in .env only raises its limits. */
+const DEFAULT_MCP_SERVERS: McpServerConfig[] = [{ url: "https://mcp.parallel.ai/mcp", headers: { Authorization: "Bearer ${PARALLEL_API_KEY}" } }];
+
 const ConfigSchema = z.object({
   timezone: z.string().default(Intl.DateTimeFormat().resolvedOptions().timeZone),
   /** 280 for standard X accounts; Premium accounts can post up to 25,000. */
@@ -64,8 +73,14 @@ const ConfigSchema = z.object({
       briefPath: z.string().default("operator.md"),
       maxToolCalls: z.number().int().min(1).max(200).default(40),
       maxRunsPerDay: z.number().int().min(1).max(100).default(12),
+      /**
+       * Remote MCP servers (Streamable HTTP) whose tools the operator may use, e.g. web search. Only tools marked
+       * read-only are offered, unless `tools` lists the ones to allow. Header values may use ${ENV_VAR}; a header whose
+       * variable is unset is left out, so a key in .env is optional.
+       */
+      mcpServers: z.array(McpServer).default(DEFAULT_MCP_SERVERS),
     })
-    .default({ enabled: false, days: "daily", runAt: ["08:00"], briefPath: "operator.md", maxToolCalls: 40, maxRunsPerDay: 12 }),
+    .default({ enabled: false, days: "daily", runAt: ["08:00"], briefPath: "operator.md", maxToolCalls: 40, maxRunsPerDay: 12, mcpServers: DEFAULT_MCP_SERVERS }),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
