@@ -28,8 +28,6 @@ const DEFAULT_MCP_SERVERS: McpServerConfig[] = [{ url: "https://mcp.parallel.ai/
 
 const ConfigSchema = z.object({
   timezone: z.string().default(Intl.DateTimeFormat().resolvedOptions().timeZone),
-  /** 280 for standard X accounts; Premium accounts can post up to 25,000. */
-  maxChars: z.number().int().positive().default(280),
   slots: z.array(SlotRule).default([{ days: "mon-fri", times: ["09:00", "12:30", "16:00"] }]),
   schedulerIntervalSeconds: z.number().int().min(5).default(15),
   /**
@@ -86,7 +84,6 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 const DEFAULT_FILE = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  maxChars: 280,
   slots: [
     { days: "mon-fri", times: ["09:00", "12:30", "16:00"] },
     { days: "sat,sun", times: ["10:00"] },

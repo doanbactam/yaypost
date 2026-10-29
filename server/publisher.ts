@@ -5,8 +5,7 @@ import type { Account, Post, PostTarget } from "../shared/types.ts";
 import { accountCredentials, getAccount, setAccountError } from "./accounts.ts";
 import type { PublishItem } from "./plugin-api.ts";
 import { hasPlatform, itemsFor, platform, platformName } from "./plugins.ts";
-import { env } from "./env.ts";
-import { getMedia, markFailed, markPublished, markTargetFailed, markTargetPublished, recordPostedTweets, recordTargetProgress, requirePost } from "./repo.ts";
+import { getMedia, markFailed, markPublished, markTargetFailed, markTargetPublished, recordTargetProgress, requirePost } from "./repo.ts";
 
 export function limitFor(account: Account): number {
   return account.maxChars ?? platform(account.platform).maxChars;
@@ -88,6 +87,7 @@ async function publishTarget(post: Post, target: PostTarget): Promise<string | n
 
 /** Publish a claimed (`publishing`) post to every destination not yet published; never throws. */
 export async function publishTargets(post: Post): Promise<Post> {
+  if (!post.targets.length) return markFailed(post.id, "This post has no destinations. Choose at least one connected account, then Retry.");
   const problems: string[] = [];
   for (const target of post.targets) {
     if (target.status === "published") continue;
@@ -96,47 +96,7 @@ export async function publishTargets(post: Post): Promise<Post> {
   }
   const after = requirePost(post.id);
   const first = after.targets.find((t) => t.url)?.url ?? null;
-  if (!problems.length) return markPublished(post.id, { url: first });
+  if (!problems.length) return markPublished(post.id, first);
   const ok = after.targets.filter((t) => t.status === "published").length;
   return markFailed(post.id, `${ok} of ${after.targets.length} destinations published. ${problems.join(" · ")}`);
-}
-
-/**
- * The legacy single-X mode: a post without destinations goes out through the X plugin with the .env keys. Progress is
- * kept in the post's xPostIds, so Retry resumes after the tweets already live. Throws with an actionable message.
- */
-export async function publishLegacyX(post: Post): Promise<{ xPostIds: string[]; url: string | null }> {
-  if (!hasPlatform("x")) throw new Error("The X plugin isn't loaded (see GET /api/plugins), so posts without destinations can't be published.");
-  const account: Account = {
-    id: "env",
-    platform: "x",
-    label: "X (.env keys)",
-    handle: null,
-    profileUrl: null,
-    maxChars: null,
-    lastError: null,
-    verifiedAt: null,
-    createdAt: post.createdAt,
-  };
-  const problem = preflight(account, post.thread.slice(post.xPostIds.length), post.xPostIds.length);
-  if (problem) throw new Error(`${problem} Nothing more was posted.`);
-  try {
-    const result = await platform("x").publish({
-      postId: post.id,
-      account,
-      credentials: { apiKey: env.x.apiKey!, apiSecret: env.x.apiSecret!, accessToken: env.x.accessToken!, accessTokenSecret: env.x.accessSecret! },
-      items: post.thread,
-      posted: post.xPostIds,
-      record: (ids) => recordPostedTweets(post.id, ids),
-    });
-    return { xPostIds: result.ids, url: result.url };
-  } catch (err) {
-    const done = requirePost(post.id).xPostIds.length;
-    const { resumable = true } = err as { resumable?: boolean };
-    const progress =
-      done && done < post.thread.length
-        ? ` ${done} of ${post.thread.length} ${done === 1 ? "is" : "are"} live on X${resumable ? "; Retry continues after them" : ""}.`
-        : "";
-    throw new Error(`${(err as Error).message}${progress}`);
-  }
 }

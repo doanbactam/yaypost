@@ -1,5 +1,5 @@
-// Web Push (VAPID) to subscribed browsers: "Time to post" when a post is due (manual mode, or too late to post
-// unattended), plus published/failed notices. Keys are generated once and kept in kv; dead subscriptions (404/410)
+// Web Push (VAPID) to subscribed browsers: "Time to post" when a post is due (too late to post unattended), plus
+// approval and failure notices. Keys are generated once and kept in kv; dead subscriptions (404/410)
 // are pruned on send.
 import { createRoute, z } from "@hono/zod-openapi";
 import webpush, { type VapidKeys } from "web-push";
@@ -46,9 +46,9 @@ function payloadFor(event: AppEvent): PushPayload | null {
     case "post.due":
       // `error` on a due post says why it needs a human (missed its time while offline, part already live).
       return {
-        title: "Time to post",
-        body: preview([first || "Your scheduled post is ready to copy.", post.error].filter(Boolean).join(" — "), 240),
-        url: `/?post=${post.id}&copy=1`,
+        title: "Not posted yet",
+        body: preview([first || "A scheduled post", post.error].filter(Boolean).join(" — "), 240),
+        url: `/?post=${post.id}`,
         postId: post.id,
         tag: `due-${post.id}`,
         requireInteraction: true,
@@ -57,10 +57,6 @@ function payloadFor(event: AppEvent): PushPayload | null {
       return { title: "Approval needed", body: first, url: `/?post=${post.id}`, postId: post.id, tag: `approval-${post.id}` };
     case "post.failed":
       return { title: "Post failed", body: preview(post.error ?? "Publishing failed.", 240), url: `/?post=${post.id}`, postId: post.id, tag: `failed-${post.id}` };
-    case "post.published":
-      // Only threads Yaypost posted itself; "mark published" after posting by hand needs no notification.
-      if (!post.xPostIds.length) return null;
-      return { title: "Posted to X", body: first, url: post.url ?? `/?post=${post.id}`, postId: post.id, tag: `published-${post.id}` };
     default:
       return null;
   }
@@ -147,7 +143,7 @@ export const pushRoutes = createRouter()
       tags,
       summary: "Register a browser for notifications",
       description:
-        "Body is the browser's `PushSubscription.toJSON()`. The browser then gets a notification when a post is due (manual mode: time to copy & post), published, or failed. Re-subscribing the same endpoint updates its keys.",
+        "Body is the browser's `PushSubscription.toJSON()`. The browser then gets a notification when a post is due (it missed its time), needs approval, or failed. Re-subscribing the same endpoint updates its keys.",
       request: { body: { required: true, content: { "application/json": { schema: Subscription } } } },
       responses: { 200: json(Ok, "Subscribed") },
     }),

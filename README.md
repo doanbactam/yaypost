@@ -63,7 +63,7 @@ the read-only tools of remote MCP servers you list (web search through Parallel 
 - **Docker:** `docker compose up -d --build`. Data lives in the `/data` volume.
 - **Anywhere public:** set `AUTH_TOKEN` in `.env` and put HTTPS (e.g. Caddy) in front.
 - **Back up** the `data/` folder. It holds the database, images and `secret.key`, which encrypts your credentials.
-- **X** has no free API tier for new apps. Without keys, Yaypost notifies you and you copy-paste the post.
+- **X** has no free API tier for new apps: connect X like any other account, with your app's API keys (pay per post).
 
 All settings are in the app. `.env.example` lists the server options.
 

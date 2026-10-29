@@ -79,7 +79,7 @@ export type Credentials = Record<string, string>;
 export interface PublishContext {
   /** The Yaypost post being published (stable across retries; useful for idempotency keys). */
   postId: string;
-  /** The connected account, or a stand-in for the legacy single-X mode (.env keys). */
+  /** The connected account. */
   account: Account;
   credentials: Credentials;
   /** What to post, already shaped for the platform (threadMode "single": one joined item). */
@@ -224,7 +224,7 @@ export interface YaypostAPI {
    */
   settings(): Record<string, unknown>;
   /** Server-wide settings plugins may need. */
-  host(): { timezone: string; maxChars: number; publicUrl: string; publicUrlIsSet: boolean };
+  host(): { timezone: string; publicUrl: string; publicUrlIsSet: boolean };
   /** Small persistent key-value store, private to this plugin (cursors, caches). Values must be JSON. */
   store: { get<T>(key: string): T | undefined; set(key: string, value: unknown): void };
   media: {

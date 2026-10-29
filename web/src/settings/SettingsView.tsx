@@ -63,7 +63,7 @@ export function SettingsView({ health, section }: { health: Health; section: Set
             <div className="mx-auto w-full max-w-[680px] px-4 pt-5 pb-24 sm:px-6">
               <h2 className="mb-2 hidden text-base font-semibold lg:block">{SECTIONS.find((s) => s.id === section)!.label}</h2>
               {section === "general" && <General health={health} />}
-              {section === "accounts" && <Accounts health={health} />}
+              {section === "accounts" && <Accounts />}
               {section === "personalization" && <Personalization health={health} />}
               {section === "agents" && (
                 <div className="space-y-7">
@@ -102,32 +102,15 @@ function General({ health }: { health: Health }) {
   const { data: config } = useQuery({ queryKey: ["config"], queryFn: api.config });
   const n = accounts?.length ?? 0;
   const chats = control?.channels.filter((c) => c.configured).map((c) => c.name || c.id) ?? [];
-  const configFile = (
-    <Tip content="Edit yaypost.config.json; changes apply without a restart.">
-      <span className="cursor-help font-mono text-[11px] text-ink-3">config</span>
-    </Tip>
-  );
 
   return (
     <div>
       <Row label="Publishing">
-        {n ? (
-          <Status
-            ok
-            value={`${n} account${n === 1 ? "" : "s"}`}
-            note={`Posts publish to their destinations at slot time. Posts without destinations go to X ${health.x.mode === "api" ? "with the API keys in .env" : "by copy & post"}.`}
-          />
-        ) : (
-          <Status
-            ok={health.x.mode === "api"}
-            value={health.x.mode === "api" ? "X: automatic" : "X: manual"}
-            note={
-              health.x.mode === "api"
-                ? "Queued threads post to X at their slot time."
-                : "At slot time you get a reminder and a one-click copy. Connect an account, or add X API keys to .env, to auto-post."
-            }
-          />
-        )}
+        <Status
+          ok={n > 0}
+          value={n ? `${n} account${n === 1 ? "" : "s"}` : "No accounts"}
+          note={n ? "Posts publish to their destinations at slot time." : "Connect an account under Accounts; until then posts can only be drafts."}
+        />
       </Row>
       <Row label="Approval">
         {control && (
@@ -157,9 +140,6 @@ function General({ health }: { health: Health }) {
           </Row>
           <Row label="Posting slots">
             <SlotsButton slots={config.slots} />
-          </Row>
-          <Row label="X character limit" aside={configFile}>
-            <span className="text-sm text-ink tabular-nums">{config.maxChars}</span>
           </Row>
         </>
       )}

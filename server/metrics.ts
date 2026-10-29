@@ -57,7 +57,6 @@ export async function refreshMetrics(postId: string, opts: { paid?: boolean } = 
       skip(err instanceof Error ? err.message : String(err));
     }
   }
-  if (!post.targets.length) skipped.push({ accountId: "", platform: "x", reason: "Posted through the .env X mode; connect X as an account to read its metrics" });
   return { post: requirePost(postId), skipped };
 }
 

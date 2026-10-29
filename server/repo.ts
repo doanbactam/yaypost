@@ -32,7 +32,6 @@ interface PostRow {
   scheduled_at: string | null;
   published_at: string | null;
   error: string | null;
-  x_post_ids: string;
   url: string | null;
   source: PostSource;
   approval: ApprovalState | null;
@@ -86,7 +85,6 @@ function toPost(r: PostRow): Post {
     scheduledAt: r.scheduled_at,
     publishedAt: r.published_at,
     error: r.error,
-    xPostIds: JSON.parse(r.x_post_ids),
     url: r.url,
     targets: targetsOf(r.id),
     approval: r.approval ? { state: r.approval, note: r.approval_note, by: r.approval_by, at: r.approval_at } : null,
@@ -187,6 +185,7 @@ export function createPost(input: {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, input.title ?? null, scheduledAt ? "scheduled" : "draft", JSON.stringify(thread), scheduledAt, input.source, ts, ts);
     if (input.targets) writeTargets(id, input.targets, [], thread);
+    if (scheduledAt) assertDestinations(requirePost(id));
     asks = Boolean(scheduledAt) && needsApproval(requirePost(id));
     if (asks) setApproval(id, "pending", null);
   });
@@ -218,10 +217,10 @@ function lockLivePrefix(before: Segment[], after: Segment[], live: number, where
   return after;
 }
 
-/** How many leading posts of the shared thread are live on some unfinished destination (legacy X or a target). */
+/** How many leading posts of the shared thread are live on some unfinished destination. */
 function sharedLive(post: Post): { live: number; where: string } {
-  let live = post.xPostIds.length;
-  let where = "X";
+  let live = 0;
+  let where = "";
   for (const t of post.targets) {
     if (t.thread || t.status === "published" || threadModeOf(t.platform) === "single") continue;
     if (t.externalIds.length > live) {
@@ -234,15 +233,17 @@ function sharedLive(post: Post): { live: number; where: string } {
 
 // ---------- approval gate ----------
 
-/** Platforms a post would publish to (the legacy single-X mode counts as X). */
-const platformsOf = (post: Post): PlatformId[] => (post.targets.length ? post.targets.map((t) => t.platform) : ["x"]);
+/** Scheduling, publishing and retrying all need somewhere to go. */
+function assertDestinations(post: Post): void {
+  if (!post.targets.length) throw new ConflictError("This post has no destinations. Choose at least one connected account (GET /api/accounts) first.");
+}
 
 /** Whether the current actor needs the person's approval before this post may go out. */
 export function needsApproval(post: Post): boolean {
   if (currentActor().kind !== "agent") return false;
   const { require, except } = getConfig().approval;
   if (require === "never") return false;
-  return !platformsOf(post).every((p) => except.includes(p));
+  return !post.targets.every((t) => except.includes(t.platform));
 }
 
 /** What an approval covers: the content and where it goes. */
@@ -301,6 +302,7 @@ export function holdForApproval(id: string): Post | null {
   const post = requirePost(id);
   if (!EDITABLE.includes(post.status)) throw new ConflictError(`Post is ${post.status}`);
   if (currentActor().kind === "agent") assertNotAwaiting(post);
+  assertDestinations(post);
   let outcome: ReturnType<typeof gate> = null;
   tx(() => {
     outcome = gate(post);
@@ -482,7 +484,7 @@ export function appendToPost(id: string, add: { text?: string; thread?: SegmentI
   const extra = normalizeThread(add).filter((s) => s.text.trim() || s.mediaIds.length);
   if (!extra.length) throw new BadInputError("Nothing to append: give text (posts separated by ---) or thread.");
   const continuable = post.targets.filter((t) => threadModeOf(t.platform) !== "single");
-  if (post.targets.length && !continuable.length) {
+  if (!continuable.length) {
     throw new ConflictError("None of this post's destinations can be continued (LinkedIn posts aren't threads).");
   }
   let asks = false;
@@ -526,6 +528,7 @@ export function deletePost(id: string): void {
 export function schedulePost(id: string, at: string): Post {
   const post = requirePost(id);
   if (!EDITABLE.includes(post.status)) throw new ConflictError(`Post is ${post.status} and cannot be rescheduled`);
+  assertDestinations(post);
   let outcome: ReturnType<typeof gate> = null;
   tx(() => {
     db.prepare("UPDATE posts SET status = 'scheduled', scheduled_at = ?, error = NULL, updated_at = ? WHERE id = ?").run(
@@ -586,34 +589,29 @@ function logAttempt(postId: string, ok: boolean, detail: string | null) {
   db.prepare("INSERT INTO attempts (post_id, at, ok, detail) VALUES (?, ?, ?, ?)").run(postId, now(), ok ? 1 : 0, detail);
 }
 
-/** Record tweet ids as they go out so a failure mid-thread can resume without duplicates. */
-export function recordPostedTweets(id: string, xPostIds: string[]): void {
-  db.prepare("UPDATE posts SET x_post_ids = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(xPostIds), now(), id);
-}
-
-export function markPublished(id: string, result: { xPostIds?: string[]; url?: string | null }): Post {
+export function markPublished(id: string, url: string | null): Post {
   const post = requirePost(id);
   const ts = now();
   db.prepare(
-    `UPDATE posts SET status = 'published', published_at = ?, error = NULL, x_post_ids = ?, url = ?,
+    `UPDATE posts SET status = 'published', published_at = ?, error = NULL, url = ?,
        scheduled_at = COALESCE(scheduled_at, ?), updated_at = ? WHERE id = ?`,
-  ).run(ts, JSON.stringify(result.xPostIds ?? post.xPostIds), result.url ?? post.url, ts, ts, id);
-  logAttempt(id, true, result.url ?? null);
+  ).run(ts, url ?? post.url, ts, ts, id);
+  logAttempt(id, true, url);
   const updated = requirePost(id);
   bus.emit({ type: "post.published", post: updated });
   return updated;
 }
 
 /**
- * The user posted it by hand (manual mode). Idempotent: an already published post is returned unchanged
- * without a second event; an in-flight API publish is refused.
+ * The user posted it by hand (e.g. a due post that missed its time). Idempotent: an already published post is returned
+ * unchanged without a second event; an in-flight publish is refused.
  */
 export function markPublishedManually(id: string, url?: string | null): Post {
   const post = requirePost(id);
-  if (post.status === "publishing") throw new ConflictError("Post is being published via the X API right now");
+  if (post.status === "publishing") throw new ConflictError("Post is being published right now");
   if (post.status === "published") return post;
-  if (url != null && !/^https?:\/\/\S+$/i.test(url)) throw new BadInputError("url must be an http(s) link to the post on X");
-  return markPublished(id, { url: url ?? null });
+  if (url != null && !/^https?:\/\/\S+$/i.test(url)) throw new BadInputError("url must be an http(s) link to the published post");
+  return markPublished(id, url ?? null);
 }
 
 export function markFailed(id: string, error: string): Post {
@@ -625,37 +623,29 @@ export function markFailed(id: string, error: string): Post {
 }
 
 /**
- * Hand over to the human (notification + copy button): there are no X keys, or the post missed its time by too
- * much to go out unattended. `note` explains why and is shown with the post.
+ * Hand over to the human (notification + copy button): the post missed its time by too much to go out unattended.
+ * `note` explains why and is shown with the post.
  */
-export function markDue(id: string, note: string | null = null): Post {
+export function markDue(id: string, note: string): Post {
   db.prepare("UPDATE posts SET status = 'due', error = ?, updated_at = ? WHERE id = ?").run(note, now(), id);
-  logAttempt(id, false, note ?? "manual: no X API credentials, waiting for copy & post");
+  logAttempt(id, false, note);
   const updated = requirePost(id);
   bus.emit({ type: "post.due", post: updated });
   return updated;
 }
 
-/** After a crash, posts stuck in `publishing` may or may not be on X. Fail them loudly rather than risk duplicates. */
+/** After a crash, posts stuck in `publishing` may or may not be live. Fail them loudly rather than risk duplicates. */
 export function recoverInterrupted(): number {
   const stuck = listPosts({ status: ["publishing"] });
   for (const p of stuck) {
-    if (p.targets.length) {
-      const notes = p.targets
-        .filter((t) => t.status !== "published")
-        .map((t) => {
-          const name = platformName(t.platform);
-          markTargetFailed(p.id, t.accountId, `Interrupted while publishing (process restarted); ${t.externalIds.length} item(s) confirmed live.`);
-          return `${name}: ${t.externalIds.length} confirmed live; check ${name} for item ${t.externalIds.length + 1} before you Retry (it may have gone out unrecorded).`;
-        });
-      markFailed(p.id, `Interrupted while publishing (process restarted). ${notes.join(" · ")}`);
-      continue;
-    }
-    markFailed(
-      p.id,
-      `Interrupted while publishing (process restarted). ${p.xPostIds.length} of ${p.thread.length} posts were confirmed on X. ` +
-        `Check your profile first: if post ${p.xPostIds.length + 1} is already there, Retry would be refused as a duplicate, so post the rest by hand as replies and mark it published; otherwise Retry posts the rest.`,
-    );
+    const notes = p.targets
+      .filter((t) => t.status !== "published")
+      .map((t) => {
+        const name = platformName(t.platform);
+        markTargetFailed(p.id, t.accountId, `Interrupted while publishing (process restarted); ${t.externalIds.length} item(s) confirmed live.`);
+        return `${name}: ${t.externalIds.length} confirmed live; check ${name} for item ${t.externalIds.length + 1} before you Retry (it may have gone out unrecorded).`;
+      });
+    markFailed(p.id, `Interrupted while publishing (process restarted). ${notes.join(" · ")}`);
   }
   return stuck.length;
 }

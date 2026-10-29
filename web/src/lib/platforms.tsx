@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AtSign, Globe } from "lucide-react";
 import { useMemo } from "react";
 import { countWith } from "../../../shared/counting.ts";
-import type { Account, Health, PlatformId, Segment } from "../../../shared/types.ts";
+import type { Account, PlatformId, Segment } from "../../../shared/types.ts";
 import { api, type Platform, type ThreadMode } from "../api.ts";
 import { cx } from "./util.ts";
 
@@ -103,10 +103,10 @@ export const removedLabel = (platforms: Platforms, platform: PlatformId) => `${p
 /** Compact name for counters ("Bsky 290/300"). */
 export const shortName = (platforms: Platforms, p: PlatformId) => (p === "bluesky" ? "Bsky" : platforms.name(p));
 
-/** Mirrors server/publisher.ts limitFor: the account's own override, else the platform default (X: the config limit). */
-export function limitFor(account: Account, health: Health, platforms: Platforms): number {
-  if (account.maxChars) return account.maxChars;
-  return account.platform === "x" ? health.maxChars : (platforms.get(account.platform)?.maxChars ?? health.maxChars);
+/** Mirrors server/publisher.ts limitFor: the account's own override, else the platform default. */
+export function limitFor(account: Account, platforms: Platforms): number {
+  // 280 only while the platform list loads (or its plugin is gone).
+  return account.maxChars ?? platforms.get(account.platform)?.maxChars ?? 280;
 }
 
 /** The limit for one item: an item with images may have a lower one (Telegram photo captions). */
@@ -133,24 +133,24 @@ export interface Meter {
 }
 
 /** One counter per distinct platform/limit among `accounts`, for a single post (platforms that thread or send messages). */
-export function postMeters(text: string, images: number, accounts: Account[], health: Health, platforms: Platforms): Meter[] {
+export function postMeters(text: string, images: number, accounts: Account[], platforms: Platforms): Meter[] {
   const out: Meter[] = [];
   for (const a of accounts) {
     if (platforms.threadMode(a.platform) === "single") continue;
-    const limit = limitFor(a, health, platforms);
+    const limit = limitFor(a, platforms);
     const max = itemLimit(limit, platforms.get(a.platform), images);
     if (out.some((m) => m.platform === a.platform && m.max === max)) continue;
-    const twin = accounts.some((b) => b !== a && b.platform === a.platform && limitFor(b, health, platforms) !== limit);
+    const twin = accounts.some((b) => b !== a && b.platform === a.platform && limitFor(b, platforms) !== limit);
     out.push({ key: a.id, label: twin ? a.label : shortName(platforms, a.platform), platform: a.platform, length: platforms.count(a.platform, text), max });
   }
   return out;
 }
 
 /** Counter for a platform that joins the thread into one post (LinkedIn). */
-export function joinedMeter(thread: Segment[], account: Account, health: Health, platforms: Platforms): Meter {
+export function joinedMeter(thread: Segment[], account: Account, platforms: Platforms): Meter {
   const item = itemsFor("single", thread)[0];
   const text = item?.text ?? "";
-  const max = itemLimit(limitFor(account, health, platforms), platforms.get(account.platform), item?.mediaIds.length ?? 0);
+  const max = itemLimit(limitFor(account, platforms), platforms.get(account.platform), item?.mediaIds.length ?? 0);
   return { key: account.id, label: platforms.name(account.platform), platform: account.platform, length: platforms.count(account.platform, text), max };
 }
 

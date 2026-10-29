@@ -169,7 +169,7 @@ See `plugins/telegram-approvals` and `plugins/discord-approvals`.
 | `ts.store.get/set` | Small persistent JSON store private to the plugin (cursors, caches). |
 | `ts.settings()` | `plugins.settings["<plugin name>"]` from the config. |
 | `ts.env(name)` | An environment variable, trimmed (`.env` is already loaded). |
-| `ts.host()` | `{ timezone, maxChars, publicUrl, publicUrlIsSet }`. |
+| `ts.host()` | `{ timezone, publicUrl, publicUrlIsSet }`. |
 | `ts.log.info/warn/error` | Prefixed with the plugin name. |
 
 ## Example

@@ -18,8 +18,8 @@ Usage: yaypost <command> [args] [--json]
 Posts
   new [text] [--file f|-] [--at next|time] [--to ref,ref] [--version ref=file]... [--image [N:]path]... [--title t]
                               Create a draft (or schedule it with --at). Posts are separated by a line "---".
-                              --to sends it to connected accounts (see accounts); without it the post uses the
-                              legacy single-X mode (X keys in the server's .env, or manual copy & post).
+                              --to sends it to connected accounts (see accounts); without it the post can only
+                              be a draft.
                               --version gives one destination its own text (posts separated by ---).
                               --image attaches to post N (default 1); repeat for more images.
   queue [--days 7]            Day-by-day timeline with scheduled posts, their destinations and free slots
@@ -27,13 +27,13 @@ Posts
   show <id>                   One post in full, with per-post counts and each destination's status
   preview <id>                What each destination will publish, counted its way, and what would stop it
   edit <id> [text] [--file f|-] [--title t] [--to ref,ref|none] [--version ref=file|ref=none]...
-                              Replace the text (images stay with their post), the destinations (none = legacy X
-                              mode) or a destination's version (none = use the main text); --title alone renames
+                              Replace the text (images stay with their post), the destinations or a
+                              destination's version (none = use the main text); --title alone renames
   schedule <id> <next|time>   Queue for the next free slot or a time
   unschedule <id>             Back to drafts
-  publish <id>                Publish now to every destination (legacy mode: X API keys needed); exit 1 if any failed
+  publish <id>                Publish now to every destination; exit 1 if any failed
   retry <id>                  Retry a failed post or publish a due one; threads resume where they stopped
-  copy <id> [--clipboard]     Print the thread (or copy it) to post by hand; only the posts not yet live
+  copy <id> [--clipboard]     Print the thread (or copy it) to post by hand
   posted <id> [--url u]       Mark as posted by hand
   append <id> [text|--file f] [--at next|ISO]
                               Continue a published thread (replies to the last live post on each destination)
@@ -67,7 +67,7 @@ Approvals (agents queue, the person decides)
   operator run [task]         Start an operator run now (owner)
 
 Other
-  health                      Server status: version, X mode, paused, timezone, limit
+  health                      Server status: version, paused, timezone
   help                        This help
 
 Ids can be shortened to any unique prefix. Text can also come from stdin, e.g.
@@ -280,7 +280,7 @@ function resolveAccount(ref, accounts) {
   const matches = strong.length ? strong : platform ? accounts.filter((a) => a.platform === platform) : [];
   if (matches.length === 1) return matches[0];
   if (matches.length > 1) throw new UsageError(`"${ref}" matches ${matches.length} accounts; use an id or label: ${matches.map(describeAccount).join("; ")}`);
-  if (!accounts.length) throw new UsageError(`No accounts are connected, so "${ref}" can't be a destination. Connect accounts in the web UI, or omit --to (legacy X mode).`);
+  if (!accounts.length) throw new UsageError(`No accounts are connected, so "${ref}" can't be a destination. Connect accounts in the web UI.`);
   throw new UsageError(`No connected account matches "${ref}". Connected: ${accounts.map(describeAccount).join("; ")}`);
 }
 
@@ -332,9 +332,9 @@ function targetLine(t, accounts) {
   return `${t.status.padEnd(9)} ${name}${t.thread ? " [own version]" : ""}${detail}`;
 }
 
-/** After saving: what would stop each destination (server preview), or X's limit in legacy mode. */
+/** After saving: what would stop each destination (server preview). */
 async function warnProblems(post) {
-  if (!post.targets?.length) return warnOver(post);
+  if (!post.targets?.length) return console.error("warning: no destinations yet; add some with --to before scheduling or publishing");
   const { targets } = await api("GET", `/api/posts/${post.id}/preview`);
   for (const t of targets) if (t.problem) console.error(`warning: ${t.label}: ${t.problem}`);
 }
@@ -345,7 +345,7 @@ const int = (v, name, fallback) => {
   return Number(v);
 };
 let serverConfigPromise;
-/** GET /api/config (timezone, maxChars, configError), fetched once; null if the server can't be asked (`count` works offline). */
+/** GET /api/config (timezone, configError), fetched once; null if the server can't be asked (`count` works offline). */
 function serverConfig() {
   serverConfigPromise ??= fetch(`${BASE}/api/config`, {
     signal: AbortSignal.timeout(3000),
@@ -372,11 +372,6 @@ const short = (id) => id.slice(0, 8);
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const firstLine = (p) => clip((p.thread[0]?.text ?? "").split("\n")[0], 60);
 
-async function maxChars() {
-  if (opt.max) return int(opt.max, "--max");
-  return (await serverConfig())?.maxChars ?? 280;
-}
-
 function emit(data, human) {
   if (opt.json) console.log(JSON.stringify(data, null, 2));
   else human(data);
@@ -387,11 +382,10 @@ function line(p) {
   return `${short(p.id)}  ${p.status.padEnd(10)} ${(when(p.scheduledAt) || "—").padEnd(22)} ${to}${p.title ? `[${p.title}] ` : ""}${firstLine(p)}`;
 }
 
-function printPost(p, limit = 280) {
+function printPost(p) {
   console.log(`${p.id}  ${p.status}${p.scheduledAt ? `  ${whenTz(p.scheduledAt)}` : ""}${p.title ? `  [${p.title}]` : ""}`);
   p.thread.forEach((s, i) => {
-    const n = weightedLength(s.text);
-    console.log(`\n[${i + 1}] ${n}/${limit}${n > limit ? " OVER" : ""}${s.mediaIds.length ? `  images: ${s.mediaIds.length}` : ""}`);
+    console.log(`\n[${i + 1}]${s.mediaIds.length ? `  images: ${s.mediaIds.length}` : ""}`);
     console.log(s.text.replace(/^/gm, "  "));
   });
   if (p.url) console.log(`\nurl: ${p.url}`);
@@ -405,14 +399,6 @@ function status(p) {
     if (p.status === "scheduled" && t.status === "pending") continue;
     console.log(`  ${platformName(t.platform).padEnd(9)} ${t.status}${t.url ? ` ${t.url}` : t.error ? ` — ${t.error}` : ""}`);
   }
-}
-
-async function warnOver(post) {
-  const limit = await maxChars();
-  post.thread.forEach((s, i) => {
-    const n = weightedLength(s.text);
-    if (n > limit) console.error(`warning: post ${i + 1} is ${n}/${limit} characters; it will fail to publish until shortened`);
-  });
 }
 
 const MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif" };
@@ -456,7 +442,7 @@ const commands = {
     const targets = await targetsFrom(undefined, thread);
     const post = await api("POST", "/api/posts", { thread, title: opt.title, scheduledAt: opt.at, targets });
     if (!opt.json) await useServerTimezone();
-    const to = post.targets.length ? ` → ${post.targets.length} destination${post.targets.length > 1 ? "s" : ""}` : " (legacy X mode)";
+    const to = post.targets.length ? ` → ${post.targets.length} destination${post.targets.length > 1 ? "s" : ""}` : " (no destinations)";
     emit(post, (p) => console.log(`${p.scheduledAt ? `Scheduled ${short(p.id)} for ${whenTz(p.scheduledAt)}` : `Saved draft ${short(p.id)}`} (${p.thread.length} post${p.thread.length > 1 ? "s" : ""})${to}`));
     await warnProblems(post);
   },
@@ -500,11 +486,10 @@ const commands = {
   async show([ref]) {
     const post = await api("GET", `/api/posts/${await resolveId(ref)}`);
     if (!opt.json) await useServerTimezone();
-    const limit = opt.json ? 0 : await maxChars();
     const accounts = !opt.json && post.targets.length ? await accountsList() : [];
     emit(post, (p) => {
-      printPost(p, limit);
-      console.log(p.targets.length ? `\ndestinations:\n${p.targets.map((t) => `  ${targetLine(t, accounts)}`).join("\n")}` : "\ndestinations: none (legacy single-X mode)");
+      printPost(p);
+      console.log(p.targets.length ? `\ndestinations:\n${p.targets.map((t) => `  ${targetLine(t, accounts)}`).join("\n")}` : "\ndestinations: none");
     });
   },
 
@@ -532,7 +517,7 @@ const commands = {
     const targets = current ? await targetsFrom(current, current.thread) : undefined;
     // `text` keeps each post's id and images by position (the server maps them).
     const post = await api("PATCH", `/api/posts/${id}`, { title: opt.title, text, targets });
-    emit(post, (p) => console.log(`Updated ${short(p.id)} (${p.thread.length} post${p.thread.length > 1 ? "s" : ""}, ${p.targets.length ? `${p.targets.length} destination(s)` : "legacy X mode"})`));
+    emit(post, (p) => console.log(`Updated ${short(p.id)} (${p.thread.length} post${p.thread.length > 1 ? "s" : ""}, ${p.targets.length ? `${p.targets.length} destination(s)` : "no destinations"})`));
     await warnProblems(post);
   },
 
@@ -595,18 +580,12 @@ const commands = {
 
   async copy([ref]) {
     const data = await api("GET", `/api/posts/${await resolveId(ref)}/export`);
-    // A thread that failed partway through an API publish: only the posts not yet live, as replies to the last live one.
-    // A fully published thread has nothing left to post: copy all of it.
-    const live = (data.alreadyLive ?? 0) < data.posts.length ? (data.alreadyLive ?? 0) : 0;
-    const text = live ? data.remainingText : data.text;
-    const count = live ? data.remainingPosts.length : data.posts.length;
-    const copiedWith = opt.clipboard ? copyToClipboard(text) : null;
+    const copiedWith = opt.clipboard ? copyToClipboard(data.text) : null;
     emit({ ...data, copied: Boolean(copiedWith) }, () => {
-      if (live) console.error(`${live} of ${data.posts.length} post(s) are already live on X. Post only the remaining ${count}, as replies to ${data.replyToUrl}`);
-      if (copiedWith) console.log(`Copied ${count} post(s) to the clipboard (${copiedWith}).${live ? "" : `\nOpen X with the first post: ${data.intentUrl}`}`);
+      if (copiedWith) console.log(`Copied ${data.posts.length} post(s) to the clipboard (${copiedWith}).`);
       else {
         if (opt.clipboard) console.error("No clipboard tool found (pbcopy, wl-copy, xclip, xsel, clip.exe); printing instead.");
-        console.log(text);
+        console.log(data.text);
       }
     });
   },
@@ -628,7 +607,7 @@ const commands = {
     const info = platforms.get(ref) ?? [...platforms.values()].find((p) => p.name.toLowerCase() === ref);
     if (!info) throw new UsageError(`--platform must be one of: ${[...platforms.keys()].join(", ")}`);
     const platform = info.id;
-    const limit = platform === "x" ? await maxChars() : opt.max ? int(opt.max, "--max") : info.maxChars;
+    const limit = opt.max ? int(opt.max, "--max") : info.maxChars;
     let parts = splitThread(readText(args));
     const joined = info.threadMode === "single" && parts.length > 1;
     if (joined) parts = [parts.join("\n\n")]; // LinkedIn publishes the thread as one post
@@ -653,7 +632,7 @@ const commands = {
     if (sub) throw new UsageError("Usage: yaypost accounts [check <ref>]");
     const accounts = await accountsList();
     emit({ accounts }, () => {
-      if (!accounts.length) return console.log("No accounts connected. Connect them in the web UI; until then posts use the legacy X mode.");
+      if (!accounts.length) return console.log("No accounts connected. Connect them in the web UI; until then posts can only be drafts.");
       for (const a of accounts) {
         const limit = a.maxChars ? ` · limit ${a.maxChars}` : "";
         console.log(`${short(a.id)}  ${platformName(a.platform).padEnd(9)} ${a.label}${a.handle ? `  ${a.handle}` : ""}${limit}${a.lastError ? `\n          error: ${a.lastError}` : ""}`);
@@ -752,9 +731,8 @@ const commands = {
       console.log(
         [
           `Yaypost ${h.version} at ${BASE}`,
-          `X: ${h.x.mode === "api" ? "API (publishes automatically)" : "manual (notify + copy)"}`,
           ...(h.paused ? ["Publishing: PAUSED (yaypost resume)"] : []),
-          `Timezone: ${h.timezone} · limit ${h.maxChars} characters · auth ${h.auth.required ? "required" : "off"}`,
+          `Timezone: ${h.timezone} · auth ${h.auth.required ? "required" : "off"}`,
           ...(configError ? [`Config: the last edit was rejected, the previous config is still in use: ${configError}`] : []),
         ].join("\n"),
       ),

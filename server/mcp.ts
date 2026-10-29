@@ -8,7 +8,7 @@ import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/
 import { Hono } from "hono";
 import { z } from "zod";
 import { countWith } from "../shared/counting.ts";
-import { hasUrl, splitThread, threadToText, weightedLength } from "../shared/thread.ts";
+import { hasUrl, splitThread, threadToText } from "../shared/thread.ts";
 import { POST_STATUSES, type Account, type PlatformId, type Post, type Segment } from "../shared/types.ts";
 import { getAccount, listAccounts } from "./accounts.ts";
 import { itemsFor, listPlatforms, platform as platformDef, platformInfo, platformName, threadModeOf } from "./plugins.ts";
@@ -18,7 +18,7 @@ import { listFeedback } from "./audit.ts";
 import { threadGuide } from "./ai/guide.ts";
 import { buildQueue, getConfig, nextFreeSlots, parseWhen } from "./config.ts";
 import { publishedWithMetrics, refreshMetrics } from "./metrics.ts";
-import { ROOT, xConfigured } from "./env.ts";
+import { ROOT } from "./env.ts";
 import { previewPost } from "./api.ts";
 import { saveImageFromUrl } from "./media.ts";
 import { limitFor } from "./publisher.ts";
@@ -51,9 +51,9 @@ export function instructions(): string {
   const { approval } = getConfig();
   const gated = approval.require === "agents";
   return `Yaypost is this person's publishing layer for you, the agent: you draft, check, schedule and publish posts and threads on X, Bluesky, Mastodon, Threads, LinkedIn, Telegram and Discord through it, read how they perform, and continue threads. You do the work; the person decides. You never see their credentials.
-Start with get_settings (timezone, limits, X mode, connected accounts, their voice, approval policy, whether publishing is paused), then get_feedback: what the person said about past posts, to follow in everything you write. A thread is text with a line containing only --- between posts.
+Start with get_settings (timezone, connected accounts and their limits, their voice, approval policy, whether publishing is paused), then get_feedback: what the person said about past posts, to follow in everything you write. A thread is text with a line containing only --- between posts.
 Destinations: create_post/update_post take \`to\` (connected accounts by id, label, handle or platform name; list_accounts shows them) and optional per-account \`versions\`.
-A post without destinations uses the legacy single-X mode (the X API keys in .env, or manual copy & post).
+A post needs at least one destination before it can be scheduled or published.
 Check every draft with count_characters (pass the platform) or, once saved, preview_post, and fix every problem before you queue it.
 ${
     gated
@@ -61,8 +61,8 @@ ${
       : "Approval is off on this instance: what you schedule or publish goes out as is. Show the person the thread and ask before scheduling, publishing or deleting."
   }
 If something looks wrong (a bad post went out, an account misbehaves), call pause_publishing: it stops everything until the person resumes.
-schedule "next" uses the configured posting slots. In manual X mode nothing posts automatically: the person is notified at the scheduled time and copies the thread into X.
-A "due" post is waiting for the person (manual mode, or it missed its time while Yaypost was offline; see its error): publish it, export it, or reschedule it.
+schedule "next" uses the configured posting slots.
+A "due" post missed its time while Yaypost was offline and is waiting for the person (see its error): publish it, export it, or reschedule it.
 Connecting an account needs the person's secrets: they do it in the Yaypost UI, never through you.
 Writing guidance: resource yaypost://guide.`;
 }
@@ -83,7 +83,7 @@ function local(iso: string | null): string | null {
   }).format(new Date(iso));
 }
 
-function counts(texts: string[], platform: PlatformId = "x", limit = getConfig().maxChars) {
+function counts(texts: string[], platform: PlatformId, limit: number) {
   return texts.map((text, index) => {
     const chars = countWith(platformDef(platform).counting, text);
     return { index, chars, remaining: limit - chars, fits: chars <= limit && text.trim().length > 0, hasLink: hasUrl(text) };
@@ -114,8 +114,7 @@ function resolveAccount(ref: string, accounts: Account[]): Account {
   }
   if (!accounts.length) {
     throw new BadInputError(
-      `No accounts are connected, so "${ref}" can't be a destination. The person connects accounts in the Yaypost UI (or POST /api/accounts); ` +
-        "until then, omit `to` to use the legacy single-X mode.",
+      `No accounts are connected, so "${ref}" can't be a destination. The person connects accounts in the Yaypost UI (or POST /api/accounts).`,
     );
   }
   throw new BadInputError(
@@ -189,13 +188,11 @@ function view(p: Post) {
     title: p.title,
     scheduledAt: p.scheduledAt,
     scheduledLocal: local(p.scheduledAt),
-    posts: p.thread.map((s, i) => ({ index: i, text: s.text, chars: weightedLength(s.text), mediaIds: s.mediaIds })),
-    mode: p.targets.length ? "accounts" : xConfigured ? "legacy-x-api" : "legacy-x-manual",
+    posts: p.thread.map((s, i) => ({ index: i, text: s.text, mediaIds: s.mediaIds })),
     destinations: destinationsView(p),
     approval: p.approval,
     url: p.url,
     error: p.error,
-    xPostIds: p.xPostIds,
     publishedAt: p.publishedAt,
     source: p.source,
     updatedAt: p.updatedAt,
@@ -212,13 +209,11 @@ function brief(p: Post) {
     scheduledLocal: local(p.scheduledAt),
     postCount: p.thread.length,
     preview: first.length > 100 ? first.slice(0, 99) + "…" : first,
-    destinations: p.targets.length
-      ? p.targets.map((t) => {
-          const label = accountLabel(t.accountId);
-          const name = platformName(t.platform);
-          return `${label.toLowerCase().includes(name.toLowerCase()) ? label : `${label} (${name})`}: ${t.status}`;
-        })
-      : [`X (legacy ${xConfigured ? "API" : "manual"} mode)`],
+    destinations: p.targets.map((t) => {
+      const label = accountLabel(t.accountId);
+      const name = platformName(t.platform);
+      return `${label.toLowerCase().includes(name.toLowerCase()) ? label : `${label} (${name})`}: ${t.status}`;
+    }),
     approval: p.approval ? { state: p.approval.state, note: p.approval.note } : null,
     url: p.url,
     error: p.error,
@@ -245,22 +240,9 @@ function warnings(p: Post): string[] {
 }
 
 function problems(p: Post): string[] {
-  if (p.targets.length) {
-    if (p.status === "published") return [];
-    return previewPost(p).targets.flatMap((t) => (t.problem ? [`${t.label}: ${t.problem}`] : []));
-  }
-  const out = counts(p.thread.map((s) => s.text))
-    .filter((c) => !c.fits)
-    .map((c) => (c.chars === 0 ? `Post [${c.index}] is empty.` : `Post [${c.index}] is ${c.chars}/${getConfig().maxChars} characters; shorten it.`));
-  if (p.status !== "published" && listAccounts().length) {
-    out.push("No destinations: this post uses the legacy single-X mode. Pass `to` (see list_accounts) to send it to connected accounts.");
-  }
-  if (p.status === "scheduled" && !xConfigured) out.push("Manual X mode: at that time the person is notified to copy the thread and post it by hand.");
-  const live = p.xPostIds.length;
-  if (live && EDITABLE.includes(p.status)) {
-    out.push(`Post${live > 1 ? `s [0]–[${live - 1}] are` : " [0] is"} already live on X and can't be changed; edit only the posts after, then retry_post.`);
-  }
-  return out;
+  if (p.status === "published") return [];
+  if (!p.targets.length) return ["No destinations yet: pass `to` (see list_accounts) before scheduling or publishing."];
+  return previewPost(p).targets.flatMap((t) => (t.problem ? [`${t.label}: ${t.problem}`] : []));
 }
 
 const postResult = (summary: string, p: Post) => {
@@ -290,7 +272,6 @@ function imageTarget(postId: string, postIndex: number): Post {
   if (!EDITABLE.includes(p.status)) throw new ConflictError(`Post is ${p.status} and can no longer be edited.`);
   const seg = p.thread[postIndex];
   if (!seg) throw new BadInputError(`postIndex ${postIndex} is out of range; the thread has ${p.thread.length} post(s) (0-based).`);
-  if (postIndex < p.xPostIds.length) throw new ConflictError(`Post [${postIndex}] is already live on X and can't be changed.`);
   const max = p.targets.length ? Math.max(...p.targets.map((t) => platformDef(t.platform).maxImages)) : MAX_IMAGES_PER_POST;
   if (seg.mediaIds.length >= max) throw new ConflictError(`Post [${postIndex}] already has ${max} images, the most any of its destinations allows.`);
   return p;
@@ -363,8 +344,8 @@ const to = z
   .optional()
   .describe(
     "Destinations: connected accounts, each by id, label, handle (@you, you.bsky.social) or platform name (\"bluesky\", \"LinkedIn\": only when exactly one account " +
-      "of that platform is connected). Ambiguous or unknown references are refused with the list of choices. Omit to use the legacy single-X mode " +
-      "(the .env X API keys, or manual copy & post); [] on update_post goes back to it.",
+      "of that platform is connected). Ambiguous or unknown references are refused with the list of choices. A post needs at least one " +
+      "before it can be scheduled or published.",
   );
 const versions = z
   .record(z.string(), z.union([z.string(), z.array(z.string()).min(1), z.null()]))
@@ -386,9 +367,8 @@ tool(
   {
     title: "Get settings",
     description:
-      "Read this instance's settings before drafting or scheduling: timezone and current local time, the per-post character limit (maxChars), " +
-      'posting slots, X mode for posts without destinations ("api" = Yaypost publishes automatically through the .env X keys at the scheduled time; ' +
-      '"manual" = no X API keys, the person is notified and copies the thread into X by hand), the connected accounts posts can go to (`to` in create_post), ' +
+      "Read this instance's settings before drafting or scheduling: timezone and current local time, posting slots, " +
+      "the connected accounts posts can go to (`to` in create_post) with each one's per-post character limit, " +
       "voiceExamples: the person's own past posts (match their voice and language when you write for them), " +
       "approval: whether what you queue waits for the person's approval, and paused: whether publishing is stopped.",
     input: {},
@@ -399,15 +379,13 @@ tool(
     const now = new Date().toISOString();
     const accounts = listAccounts().map((a) => ({ id: a.id, platform: a.platform, label: a.label, handle: a.handle, limit: limitFor(a), lastError: a.lastError }));
     return result(
-      `Timezone ${c.timezone}, X limit ${c.maxChars} characters per post, X mode ${xConfigured ? "api" : "manual"} (posts without destinations), ` +
+      `Timezone ${c.timezone}, ` +
         `${accounts.length} connected account(s)${accounts.length ? `: ${accounts.map((a) => `${a.label} (${platformName(a.platform)})`).join(", ")}` : ""}.`,
       {
       timezone: c.timezone,
       now,
       nowLocal: local(now),
-      maxChars: c.maxChars,
       slots: c.slots,
-      xMode: xConfigured ? "api" : "manual",
       accounts,
       voiceExamples: c.voice.map((v) => v.trim()).filter((v) => v && !/^Paste \d/.test(v)),
       approval: c.approval,
@@ -455,7 +433,7 @@ tool(
     return result(
       accounts.length
         ? accounts.map((a) => `${describeAccount(a)}${a.lastError ? ` — ERROR: ${a.lastError}` : ""}`).join("; ")
-        : "No accounts connected; posts use the legacy single-X mode. The person can connect accounts in the Yaypost UI.",
+        : "No accounts connected, so nothing can be scheduled or published yet. The person connects accounts in the Yaypost UI.",
       { accounts },
     );
   },
@@ -466,16 +444,16 @@ tool(
   {
     title: "Count characters",
     description:
-      "Count each post of a draft the way a platform does, against its limit. Default X (weighted: CJK characters and emoji count 2; Vietnamese letters from Unicode's " +
-      "Latin Extended Additional block such as ạ ấ ệ ố ữ count 2, while á à é ó ơ ư đ count 1; every link counts 23; limit = this instance's maxChars). " +
-      "`platform` counts as that platform does (list_platforms gives each one's counting rule and limit: e.g. bluesky graphemes, mastodon links as 23, threads emoji as UTF-8 bytes, " +
+      "Count each post of a draft the way a platform does, against its limit. Pass `platform` or `account`. " +
+      "`platform` counts as that platform does (list_platforms gives each one's counting rule and limit: e.g. x weighted — CJK characters and emoji count 2, Vietnamese letters from Unicode's " +
+      "Latin Extended Additional block such as ạ ấ ệ ố ữ count 2 while á à é ó ơ ư đ count 1, every link 23; bluesky graphemes, mastodon links as 23, threads emoji as UTF-8 bytes, " +
       "linkedin joins the thread into ONE post, telegram photo captions 1024). `account` uses that connected account's " +
       "own limit (e.g. X Premium). Pass `text` (posts separated by a line containing only ---) or `posts`. " +
       "Use it on every draft and every per-destination version before create_post or update_post, and shorten any post where fits is false. " +
       "hasLink marks posts containing a URL: on X those cost more through the API and usually get less reach.",
     input: {
       ...threadArgs,
-      platform: z.string().optional().describe("Count as this platform does (default x); list_platforms shows the ids"),
+      platform: z.string().optional().describe("Count as this platform does (e.g. x, bluesky); list_platforms shows the ids"),
       account: z.string().optional().describe("A connected account (id, label, handle or platform name): its platform and its own limit"),
     },
     annotations: { ...READ, idempotentHint: true },
@@ -487,7 +465,8 @@ tool(
     if (account && args.platform && account.platform !== args.platform) {
       throw new BadInputError(`${describeAccount(account)} is not a ${platformName(args.platform)} account.`);
     }
-    const platformId = account?.platform ?? args.platform ?? "x";
+    const platformId = account?.platform ?? args.platform;
+    if (!platformId) throw new BadInputError("Give `platform` (e.g. x, bluesky) or `account`.");
     const def = platformDef(platformId);
     const limit = account ? limitFor(account) : def.maxChars;
     const single = def.threadMode === "single" && parts.length > 1;
@@ -511,7 +490,7 @@ tool(
     description:
       "Show the posting timeline day by day (in the configured timezone): scheduled, due, failed and published posts, plus the free slots still open. " +
       'Use it to answer "what\'s scheduled?" or to pick a time. Free slots are what schedule "next" fills, earliest first. ' +
-      "Due posts are waiting for the person (manual mode, or they missed their time while Yaypost was offline).",
+      "Due posts are waiting for the person (they missed their time while Yaypost was offline).",
     input: { days: z.number().int().min(1).max(60).default(7).describe("How many days ahead, starting today") },
     annotations: READ,
   },
@@ -534,7 +513,7 @@ tool(
     title: "List posts",
     description:
       "List posts, most recent first, optionally filtered by status: draft (not queued), scheduled (waiting for its time), publishing, " +
-      "due (waiting for the person: manual mode, or it missed its time while Yaypost was offline — see error), published, " +
+      "due (missed its time while Yaypost was offline and waits for the person — see error), published, " +
       "failed (see error, then retry_post). " +
       "Returns previews of the first post; use get_post for the full thread.",
     input: {
@@ -554,9 +533,9 @@ tool(
   {
     title: "Get a post",
     description:
-      "Get one post: every post of the thread with its X character count and attached image ids, title, status, schedule (UTC and local), " +
+      "Get one post: every post of the thread with its attached image ids, title, status, schedule (UTC and local), " +
       "its destinations (per account: status, own version or not, per-item counts the platform's way, live items, URL, error, and `problem` = what would stop it), " +
-      "mode (accounts, or legacy-x-api / legacy-x-manual for a post without destinations), the URL once published, the last error, and the log of publish attempts.",
+      "the URL once published, the last error, and the log of publish attempts.",
     input: { id },
     annotations: READ,
   },
@@ -575,12 +554,11 @@ tool(
       "`to` picks the destinations among the connected accounts (list_accounts), e.g. [\"bluesky\", \"@me\", \"Work LinkedIn\"]; each gets the same thread unless " +
       "`versions` gives it its own (e.g. {\"linkedin\": \"one longer post\"}). How a thread lands depends on the platform: X, Bluesky, Mastodon and Threads " +
       "post a reply chain; LinkedIn joins the posts into ONE post (blank lines between them, 3000 characters); Telegram and Discord send consecutive messages. " +
-      "Without `to` the post uses the legacy single-X mode: the X API keys in .env, or manual copy & post. " +
+      "Without `to` it can only be a draft: scheduling needs at least one destination. " +
       "Without `schedule` it is saved as a draft the person can review in the Yaypost UI. " +
       'schedule "next" puts it in the next free posting slot from the configured schedule; an ISO-8601 time schedules it exactly. ' +
       "Run count_characters (with each destination's platform) first and check the result's warnings or preview_post. " +
-      "When approval is on (get_settings), scheduling sends it to the person for approval: it goes out only once they approve. " +
-      "In manual X mode nothing is posted automatically: at the scheduled time the person is notified and copies the thread into X.",
+      "When approval is on (get_settings), scheduling sends it to the person for approval: it goes out only once they approve.",
     input: {
       ...threadArgs,
       title: z.string().max(200).optional().describe("Private label shown in the queue; never posted"),
@@ -607,9 +585,9 @@ tool(
     description:
       "Change the text, title, destinations or per-destination versions of a draft, scheduled, due or failed post; published posts can't be edited. " +
       "Give the whole new thread as `text` (--- separators) or `posts`; images stay attached to the post at the same position. " +
-      "`to` replaces the destination list (accounts kept keep their versions; [] = back to the legacy single-X mode); omit it to keep the destinations. " +
+      "`to` replaces the destination list (accounts kept keep their versions); omit it to keep the destinations. " +
       "`versions` sets or (null) removes per-destination versions. LinkedIn joins whatever thread it gets into one post. " +
-      "If a thread failed partway through publishing, the posts already live somewhere (xPostIds, or a destination's live items) can't be changed, removed or " +
+      "If a thread failed partway through publishing, the posts already live on a destination can't be changed, removed or " +
       "reordered, and a partly published destination can't be removed: edit only the posts after them, then retry_post. The schedule is unchanged. " +
       "Check counts with count_characters first.",
     input: { id, ...threadArgs, title: z.string().max(200).nullable().optional(), to, versions },
@@ -634,7 +612,7 @@ tool(
     description:
       "Show exactly what each destination of a saved post will publish: its items (its own version or the main thread; LinkedIn's joined single post), " +
       "each counted the way that platform counts against the account's limit, and `problem`: what would make publishing there fail before anything is posted " +
-      "(null = ready). A post without destinations shows one entry for the legacy single-X mode. Use it before schedule_post or publish_now.",
+      "(null = ready). Use it before schedule_post or publish_now.",
     input: { id },
     annotations: READ,
   },
@@ -678,7 +656,7 @@ tool(
   "delete_post",
   {
     title: "Delete a post",
-    description: "Permanently delete a post from Yaypost. Cannot be undone, and does not remove anything already on X. Only when the person asks.",
+    description: "Permanently delete a post from Yaypost. Cannot be undone, and does not remove anything already published. Only when the person asks.",
     input: { id },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
@@ -696,15 +674,11 @@ tool(
       "Publish a draft, scheduled, due or failed post or thread right now to every destination not yet published, ignoring its schedule. " +
       "Public and irreversible (and billed per post on X's API; the other platforms are free). When approval is on, this asks the person instead " +
       "and it goes out as soon as they approve (the result says so). " +
-      "Each destination succeeds or fails on its own; a failed one is listed in `error` and in its destination entry. " +
-      "A post without destinations uses the legacy single-X mode: in manual X mode (no API keys) this fails; use export_thread instead, let the person post it, then mark_published.",
+      "Each destination succeeds or fails on its own; a failed one is listed in `error` and in its destination entry.",
     input: { id },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   },
   async ({ id }) => {
-    if (!xConfigured && !requirePost(id).targets.length) {
-      throw new ConflictError("X API keys aren't configured (manual mode). Use export_thread, have the person post it on X, then call mark_published.");
-    }
     const p = await publishNow(id);
     return postResult(p.status === "published" ? `Published: ${p.url ?? "(no URL)"}` : `Status: ${p.status}${p.error ? ` — ${p.error}` : ""}`, p);
   },
@@ -717,7 +691,7 @@ tool(
     description:
       "Publish a failed or due post again, to the destinations that aren't published yet. Each thread resumes after the last item that went out there, so nothing is duplicated. " +
       "Read the errors with get_post first and fix the cause (text over a limit: edit the post or that destination's version; an expired token: the person reconnects " +
-      "the account in the UI; a deleted image) before retrying. For a post without destinations in manual X mode it only re-sends the copy & post notification.",
+      "the account in the UI; a deleted image) before retrying.",
     input: { id },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   },
@@ -732,9 +706,9 @@ tool(
   {
     title: "Mark as posted by hand",
     description:
-      "Record that the person posted this on X themselves (manual mode, or after copying it). Pass the URL of the first post if known. " +
-      "Moves it to published. Refused while Yaypost is publishing it through the X API; an already published post is left unchanged.",
-    input: { id, url: z.url({ protocol: /^https?$/ }).optional().describe("Link to the first post on X (http or https)") },
+      "Record that the person posted this themselves (e.g. a due post they copied with export_thread). Pass the URL of the first post if known. " +
+      "Moves it to published. Refused while Yaypost is publishing it; an already published post is left unchanged.",
+    input: { id, url: z.url({ protocol: /^https?$/ }).optional().describe("Link to the first published post (http or https)") },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   ({ id, url }) => {
@@ -765,35 +739,17 @@ tool(
   {
     title: "Export for posting by hand",
     description:
-      "Get a post's main thread ready to publish by hand on X (legacy single-X/manual mode; per-destination versions are in get_post): the full text (posts separated by ---), the individual posts, and an X intent URL that opens " +
-      "the X composer with the first post filled in. X's intent link can't create a thread, so the person adds the remaining posts as replies. " +
-      "If the thread failed partway through an API publish, alreadyLive > 0: then only remainingText / remainingPosts still need posting, " +
-      "as replies under replyToUrl. Use in manual mode or whenever the person wants to post it themselves; afterwards call mark_published.",
+      "Get a post's main thread ready to publish by hand (per-destination versions are in get_post): the full text (posts separated by ---) and the individual posts. " +
+      "Use it for a due post or whenever the person wants to post it themselves; afterwards call mark_published.",
     input: { id },
     annotations: READ,
   },
   ({ id }) => {
     const p = requirePost(id);
     const posts = p.thread.map((s) => s.text);
-    const intentUrl = `https://x.com/intent/post?text=${encodeURIComponent(posts[0] ?? "")}`;
-    const alreadyLive = Math.min(p.xPostIds.length, posts.length);
-    const remaining = p.thread.slice(alreadyLive);
-    const replyToUrl = alreadyLive ? `https://x.com/i/status/${p.xPostIds[alreadyLive - 1]}` : null;
     return result(
-      p.status === "published"
-        ? `Already published${p.url ? ` at ${p.url}` : ""}; ${posts.length} post(s) below for reference.`
-        : alreadyLive
-          ? `${alreadyLive} of ${posts.length} post(s) are already live on X; ${remaining.length} remaining post(s) to add as replies under ${replyToUrl}.`
-          : `${posts.length} post(s) ready to copy.`,
-      {
-        text: threadToText(p.thread),
-        posts,
-        intentUrl,
-        alreadyLive,
-        remainingText: threadToText(remaining),
-        remainingPosts: remaining.map((s) => s.text),
-        replyToUrl,
-      },
+      p.status === "published" ? `Already published${p.url ? ` at ${p.url}` : ""}; ${posts.length} post(s) below for reference.` : `${posts.length} post(s) ready to copy.`,
+      { text: threadToText(p.thread), posts },
     );
   },
 );

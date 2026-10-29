@@ -112,9 +112,9 @@ export function Sidebar(p: Props) {
   const alert = paused
     ? { tone: "red", icon: CirclePause, text: "Publishing paused", tip: paused.reason ?? undefined, to: "/" }
     : attention?.length
-      ? { tone: "amber", icon: TriangleAlert, text: `${attention.length} post${attention.length === 1 ? "" : "s"} need${attention.length === 1 ? "s" : ""} you`, tip: "Due to post by hand, or failed", to: "/queue" }
-      : accounts && !accounts.length && p.health.x.mode !== "api"
-        ? { tone: "ai", icon: Plus, text: "Connect an account", tip: "Until then, you copy and post by hand", to: "/settings/accounts" }
+      ? { tone: "amber", icon: TriangleAlert, text: `${attention.length} post${attention.length === 1 ? "" : "s"} need${attention.length === 1 ? "s" : ""} you`, tip: "Missed their time, or failed", to: "/queue" }
+      : accounts && !accounts.length
+        ? { tone: "ai", icon: Plus, text: "Connect an account", tip: "Posts need a destination before they can go out", to: "/settings/accounts" }
         : null;
 
   const row = (n: NavItem) => (

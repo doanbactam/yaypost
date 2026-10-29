@@ -102,7 +102,7 @@ export function useDraft(postId: string | null, onCreated: (post: Post) => void)
           setPost(saved);
         } catch (e) {
           if (e instanceof ApiError && e.status === 409 && r.id) {
-            // Published or publishing meanwhile, or the edit touched posts already live on X: show the server's version.
+            // Published or publishing meanwhile, or the edit touched posts already live: show the server's version.
             const fresh = await api.getPost(r.id).catch(() => null);
             if (fresh && EDITABLE.includes(fresh.status)) toastError("Your last edit wasn't saved", e);
             if (fresh) {

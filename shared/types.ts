@@ -4,10 +4,10 @@ export const POST_STATUSES = ["draft", "scheduled", "publishing", "due", "publis
 export type PostStatus = (typeof POST_STATUSES)[number];
 // draft      – not in the queue
 // scheduled  – waiting for its time
-// publishing – claimed by the scheduler, X API calls in flight
-// due        – time arrived but nothing can auto-post (no X keys): user is notified to copy & post by hand
-// published  – live on X (via API, or marked by hand)
-// failed     – X API error; `error` says why, `xPostIds` lists any tweets that did go out
+// publishing – claimed by the scheduler, platform API calls in flight
+// due        – missed its time while the server was off: the user decides (publish now, copy & post by hand, reschedule)
+// published  – live on every destination (or marked by hand)
+// failed     – a destination failed; `error` and each target's `error` say why, `externalIds` what did go out
 
 export type PostSource = "ui" | "api" | "mcp" | "cli" | "ai" | "operator";
 
@@ -95,11 +95,10 @@ export interface Post {
   scheduledAt: string | null; // ISO-8601 UTC
   publishedAt: string | null;
   error: string | null;
-  xPostIds: string[]; // tweets already posted, in thread order (lets a failed thread resume)
-  url: string | null; // link to the first tweet once published
+  url: string | null; // link to the first destination's post once published
   /**
-   * Accounts this post goes to. Empty = the original single-X mode: X API keys from .env, or manual copy & post.
-   * With targets, each one publishes and resumes independently; the post's status summarises them.
+   * Accounts this post goes to (at least one to schedule or publish). Each one publishes and resumes independently;
+   * the post's status summarises them.
    */
   targets: PostTarget[];
   /** Human approval of agent-made content (see ApprovalState). Scheduled posts only go out when null or approved. */
@@ -308,8 +307,6 @@ export interface Health {
   ok: true;
   version: string;
   timezone: string;
-  maxChars: number;
-  x: { configured: boolean; mode: "api" | "manual" };
   ai: { configured: boolean; provider: string | null; model: string | null };
   paused: boolean;
   auth: { required: boolean };

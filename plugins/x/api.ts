@@ -75,7 +75,7 @@ function explain(status: number, headers: Headers, body: XProblem | undefined, r
     return `X refused the read (403: ${detail}). In the X Developer Console, check the app belongs to a project with API access and credits, then try again.`;
   }
   if (status === 401) {
-    return `X rejected the API credentials (401: ${detail}). Check X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET in .env (regenerate them in the X Developer Console if revoked) and that this server's clock is correct, then restart and Retry.`;
+    return `X rejected the API credentials (401: ${detail}). Check the account's keys in Settings › Accounts (regenerate them in the X Developer Console if revoked) and that this server's clock is correct, then Retry.`;
   }
   if (status === 402 || /credit|payment|billing|usage-capped/i.test(haystack)) {
     return `Your X API account is out of credits or hit its spending cap (${status}: ${detail}). The X API is pay-per-use (about $0.015 per post, $0.20 per post with a link): top up credits in the X Developer Console, then Retry.`;
@@ -97,7 +97,7 @@ function explain(status: number, headers: Headers, body: XProblem | undefined, r
     return `Your X developer app can't use the posting API (403: ${detail}). In the X Developer Console, check the app belongs to a project with API access and has credits, then Retry.`;
   }
   if (status === 403 && /oauth1|permission|not permitted/i.test(haystack)) {
-    return `X refused to post (403: ${detail}). The app's permissions must be "Read and write": set it under User authentication settings in the X Developer Console, then regenerate the Access Token and Secret (tokens keep the permissions they were created with), update .env, restart and Retry.`;
+    return `X refused to post (403: ${detail}). The app's permissions must be "Read and write": set it under User authentication settings in the X Developer Console, then regenerate the Access Token and Secret (tokens keep the permissions they were created with), update the account in Settings › Accounts and Retry.`;
   }
   if (status === 403) {
     return `X refused to post (403: ${detail}). Check the post and the account on x.com (reply restrictions, a locked or limited account), then Retry.`;

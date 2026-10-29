@@ -4,7 +4,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { countWith } from "../shared/counting.ts";
-import { threadToText, weightedLength } from "../shared/thread.ts";
+import { threadToText } from "../shared/thread.ts";
 import { APP_EVENT_TYPES, APPROVAL_STATES, POST_STATUSES, type Health, type PlatformId, type Post, type PostSource, type PostStatus } from "../shared/types.ts";
 import { connectAccount, deleteAccount, getAccount, listAccounts, recheckAccount, updateAccount } from "./accounts.ts";
 import { aiStatus } from "./ai/provider.ts";
@@ -14,7 +14,7 @@ import type { ThreadMode } from "./plugin-api.ts";
 import { hasPlatform, itemsFor, listPlatforms, platform, platformInfo, threadModeOf } from "./plugins.ts";
 import { pauseState } from "./control.ts";
 import { db } from "./db.ts";
-import { env, VERSION, xConfigured } from "./env.ts";
+import { env, VERSION } from "./env.ts";
 import { createRouter } from "./http.ts";
 import { publishedWithMetrics, refreshMetrics } from "./metrics.ts";
 import { saveImage, saveImageFromUrl } from "./media.ts";
@@ -123,19 +123,18 @@ export const PostSchema = z
     status: z.enum(POST_STATUSES).openapi({
       description:
         "draft: not queued · scheduled: waits for scheduledAt · publishing: platform API calls in flight · " +
-        "due: its time came but it needs a human — a post without `targets` and no X API keys (manual mode: copy & post by hand), or it was more than lateGraceMinutes " +
+        "due: its time came but it needs a human — it was more than lateGraceMinutes " +
         "late because the server was off (`error` says why; publish, retry or reschedule it) · published: live everywhere it was sent · " +
-        "failed: a platform refused it (see `error`, and each target's `status`/`error`; retry resumes after what already went out: `xPostIds` or the target's `externalIds`).",
+        "failed: a platform refused it (see `error`, and each target's `status`/`error`; retry resumes after what already went out: each target's `externalIds`).",
     }),
     thread: z.array(SegmentSchema).openapi({ description: "Posts in thread order; a single post is a one-item thread." }),
     scheduledAt: z.iso.datetime().nullable(),
     publishedAt: z.iso.datetime().nullable(),
     error: z.string().nullable(),
-    xPostIds: z.array(z.string()).openapi({ description: "Legacy single-X mode only: tweets already posted through the .env keys, in order." }),
-    url: z.string().nullable().openapi({ description: "Link to the first post once published (with targets: the first destination's link)." }),
+    url: z.string().nullable().openapi({ description: "Link to the first destination's post once published." }),
     targets: z.array(PostTargetSchema).openapi({
       description:
-        "Destinations (connected accounts). Empty = the original single-X mode: the X API keys from .env, or manual copy & post. " +
+        "Destinations (connected accounts); at least one is needed to schedule or publish. " +
         "Each target publishes and resumes independently; `status` summarises them. Credentials are never returned.",
     }),
     approval: z
@@ -198,8 +197,8 @@ const threadFields = {
     .optional()
     .openapi({
       description:
-        "Where the post goes: connected accounts (GET /accounts), each optionally with its own version. Omit or send [] for the original single-X mode " +
-        "(.env X keys, or manual copy & post). On PATCH it replaces the whole list; omitted = unchanged. A destination with part of the thread already live can't be removed (409).",
+        "Where the post goes: connected accounts (GET /accounts), each optionally with its own version. A post without any can only be a draft. " +
+        "On PATCH it replaces the whole list; omitted = unchanged. A destination with part of the thread already live can't be removed (409).",
     }),
 };
 const notBoth = (b: { text?: unknown; thread?: unknown }) => b.text === undefined || b.thread === undefined;
@@ -242,7 +241,6 @@ const QueueSchema = z
 const ConfigSchema = z
   .object({
     timezone: z.string(),
-    maxChars: z.number().int(),
     slots: z.array(
       z.union([
         z.object({ days: z.string(), times: z.array(z.string()) }),
@@ -265,13 +263,6 @@ const HealthSchema = z
     ok: z.literal(true),
     version: z.string(),
     timezone: z.string(),
-    maxChars: z.number().int(),
-    x: z.object({
-      configured: z.boolean(),
-      mode: z.enum(["api", "manual"]).openapi({
-        description: "For posts without targets (legacy single-X mode): api = auto-posts via X API v2 with the .env keys; manual = notifies the user to copy & post.",
-      }),
-    }),
     ai: z.object({ configured: z.boolean(), provider: z.string().nullable(), model: z.string().nullable() }),
     paused: z.boolean().openapi({ description: "true while publishing is paused (kill switch); nothing goes out." }),
     auth: z.object({ required: z.boolean() }),
@@ -351,7 +342,7 @@ const PlatformInfoSchema = z
   .object({
     id: PlatformIdSchema,
     name: z.string(),
-    maxChars: z.number().int().openapi({ description: "Default per-post limit (an account's maxChars overrides it; X uses the config's maxChars)." }),
+    maxChars: z.number().int().openapi({ description: "Default per-post limit (an account's maxChars overrides it)." }),
     maxCharsWithMedia: z.number().int().optional().openapi({ description: "Lower limit for an item with images (Telegram photo captions)." }),
     maxImages: z.number().int(),
     imageTypes: z.array(z.string()).optional().openapi({ description: "Accepted image MIME types when the platform is pickier than PNG/JPEG/WebP/GIF." }),
@@ -394,7 +385,7 @@ const PreviewSchema = z
   .object({
     targets: z.array(
       z.object({
-        accountId: z.string().nullable().openapi({ description: "null = the legacy single-X mode (a post without targets)." }),
+        accountId: z.string(),
         platform: PlatformIdSchema,
         label: z.string(),
         limit: z.number().int(),
@@ -504,7 +495,7 @@ export function mergeTargets(post: Post, targets: { accountId: string; thread?: 
 }
 
 export interface PreviewTarget {
-  accountId: string | null;
+  accountId: string;
   platform: PlatformId;
   label: string;
   limit: number;
@@ -517,26 +508,6 @@ export interface PreviewTarget {
 
 /** What each destination would receive, counted its way, and what would stop it (the same checks publishing runs). */
 export function previewPost(post: Post): { targets: PreviewTarget[] } {
-  if (!post.targets.length) {
-    const limit = getConfig().maxChars;
-    const live = post.xPostIds.length;
-    const items = post.thread.map((s) => {
-      const count = weightedLength(s.text);
-      return { text: s.text, count, fits: count <= limit && s.mediaIds.length <= 4 && Boolean(s.text.trim() || s.mediaIds.length), images: s.mediaIds.length };
-    });
-    let problem: string | null = null;
-    for (const [i, it] of items.entries()) {
-      if (i < live) continue;
-      const n = items.length > 1 ? `Post ${i + 1}` : "The post";
-      if (!it.text.trim() && !it.images) problem = `${n} is empty; add text or remove it.`;
-      else if (it.count > limit) problem = `${n} is ${it.count}/${limit} characters on X; shorten it.`;
-      else if (it.images > 4) problem = `${n} has ${it.images} images; X allows at most 4.`;
-      if (problem) break;
-    }
-    const status = post.status === "published" ? "published" : post.status === "failed" ? "failed" : "pending";
-    const label = xConfigured ? "X (.env API keys)" : "X (manual: copy & post)";
-    return { targets: [{ accountId: null, platform: "x", label, limit, threadMode: "replies", status, live, items, problem: status === "published" ? null : problem }] };
-  }
   return {
     targets: post.targets.map((t) => {
       const account = getAccount(t.accountId);
@@ -623,8 +594,8 @@ apiRoutes.openapi(
       "Creates a draft, or queues it when `scheduledAt` is set. Give the content either as `text` (posts separated by a line containing only `---`) " +
       'or as structured `thread` segments. `scheduledAt: "next"` takes the next free slot from the posting schedule in yaypost.config.json; ' +
       "an ISO date-time must be in the future (no offset = configured timezone; a date alone is refused). " +
-      "`targets` lists the connected accounts it goes to (GET /accounts), each optionally with its own version of the thread; without targets it uses the original " +
-      "single-X mode (.env X keys, or manual copy & post). Posts over a destination's limit (X: maxChars from GET /health, URLs 23, emoji 2; others: GET /platforms) " +
+      "`targets` lists the connected accounts it goes to (GET /accounts), each optionally with its own version of the thread; without targets it can only be a draft " +
+      "(scheduling answers 409). Posts over a destination's limit (GET /platforms, or the account's own maxChars) " +
       "are accepted, but publishing refuses that destination before anything is posted there, so check GET /posts/{id}/preview. " +
       "Send an `Idempotency-Key` header when you might retry.",
     request: { headers: IdemHeaders, body: body(CreatePostSchema) },
@@ -665,9 +636,9 @@ apiRoutes.openapi(
     summary: "Edit a post's content, title or destinations",
     description:
       "Replaces the content, the title and/or the destinations; omitted fields stay unchanged. `text` replaces the thread but keeps each post's id and images by position; " +
-      "`thread` is taken as given. `targets` replaces the destination list (a target without `thread` keeps its current version; `thread: null` drops it; " +
-      "[] = back to the single-X mode). Scheduling is unaffected — use /schedule or /unschedule. Refused with 409 once the post is publishing or published, " +
-      "and when it would change, remove or reorder posts that are already live somewhere (the first xPostIds.length posts, or a target's first externalIds.length), " +
+      "`thread` is taken as given. `targets` replaces the destination list (a target without `thread` keeps its current version; `thread: null` drops it). " +
+      "Scheduling is unaffected — use /schedule or /unschedule. Refused with 409 once the post is publishing or published, " +
+      "and when it would change, remove or reorder posts that are already live somewhere (a target's first externalIds.length), " +
       "or remove a destination that is partly published.",
     request: { params: IdParam, body: body(UpdatePostSchema) },
     responses: { 200: json(PostSchema, "The updated post."), 400: E400, 404: E404, 409: E409 },
@@ -737,10 +708,9 @@ apiRoutes.openapi(
     description:
       "Publishes immediately to every destination not yet published and waits: returns the post as published, or as failed with `error` " +
       "(platform errors are not HTTP errors here — check `status` and each target's `status`/`error`). Works for draft, scheduled, due and failed posts; " +
-      "items already live (a target's externalIds, or xPostIds) are not re-sent. A destination whose thread is empty, over its limit or has too many images " +
+      "items already live (a target's externalIds) are not re-sent. A destination whose thread is empty, over its limit or has too many images " +
       "fails before anything is posted there (GET /posts/{id}/preview shows this in advance); the other destinations still go out. " +
-      "A post without targets uses the original single-X mode: it needs X API keys in .env (GET /health → x.mode = api), otherwise it answers 409 — " +
-      "then get the text from GET /posts/{id}/export, post it by hand, and call POST /posts/{id}/mark-published.",
+      "A post without targets answers 409.",
     request: { params: IdParam, headers: IdemHeader },
     responses: { 200: json(PostSchema, "The post after publishing (check status/error)."), 404: E404, 409: E409 },
   }),
@@ -756,8 +726,7 @@ apiRoutes.openapi(
     summary: "Retry a failed post, or publish a due one",
     description:
       "For failed or due posts only (409 otherwise). It publishes now to the destinations that aren't published yet: items already posted " +
-      "(a target's externalIds, or xPostIds) are not re-sent, each thread resumes after them; this also posts a due post that missed its time while the server was off. " +
-      "A post without targets in manual mode (no X keys) is marked due again instead, which re-sends the copy & post notification.",
+      "(a target's externalIds) are not re-sent, each thread resumes after them; this also posts a due post that missed its time while the server was off.",
     request: { params: IdParam, headers: IdemHeader },
     responses: { 200: json(PostSchema, "The post after the retry."), 404: E404, 409: E409 },
   }),
@@ -772,12 +741,12 @@ apiRoutes.openapi(
     operationId: "markPostPublished",
     summary: "Record that the user posted it by hand",
     description:
-      "Manual mode: after the user copied the thread (GET /posts/{id}/export) and posted it themselves, mark it published, optionally with the URL. " +
-      "Calling it again on a published post is a no-op (returned unchanged, no event). Refused with 409 while an X API publish of it is in flight.",
+      "After the user copied the thread (GET /posts/{id}/export, e.g. for a due post) and posted it themselves, mark it published, optionally with the URL. " +
+      "Calling it again on a published post is a no-op (returned unchanged, no event). Refused with 409 while a publish of it is in flight.",
     request: {
       params: IdParam,
       headers: IdemHeader,
-      body: body(z.object({ url: z.url({ protocol: /^https?$/ }).optional().openapi({ description: "Link to the first tweet." }) }), false),
+      body: body(z.object({ url: z.url({ protocol: /^https?$/ }).optional().openapi({ description: "Link to the first published post." }) }), false),
     },
     responses: { 200: json(PostSchema, "The published post."), 400: E400, 404: E404, 409: E409 },
   }),
@@ -792,11 +761,9 @@ apiRoutes.openapi(
     path: "/posts/{id}/export",
     tags: ["Posts"],
     operationId: "exportPost",
-    summary: "Get the thread as plain text and an X intent link",
+    summary: "Get the thread as plain text",
     description:
-      "For copy & paste posting (the post's own thread, not per-destination versions): `text` is the whole thread with `---` separators, `posts` the individual posts, " +
-      "`intentUrl` opens X's composer prefilled with the first post (X intents can't create threads or attach images). " +
-      "When an API publish stopped partway (alreadyLive > 0), post only `remainingPosts`, as replies under `replyToUrl`.",
+      "For copy & paste posting (the post's own thread, not per-destination versions): `text` is the whole thread with `---` separators, `posts` the individual posts.",
     request: { params: IdParam },
     responses: {
       200: json(
@@ -804,11 +771,6 @@ apiRoutes.openapi(
           .object({
             text: z.string(),
             posts: z.array(z.string()),
-            intentUrl: z.url(),
-            alreadyLive: z.number().int().openapi({ description: "How many posts of the thread are already live on X (xPostIds); 0 unless an API publish stopped partway." }),
-            remainingText: z.string().openapi({ description: "Like `text`, but only the posts not yet live." }),
-            remainingPosts: z.array(z.string()).openapi({ description: "The posts not yet live, in order." }),
-            replyToUrl: z.url().nullable().openapi({ description: "The last live post, to reply to with remainingPosts[0]; null when alreadyLive is 0." }),
           })
           .openapi("ThreadExport"),
         "Exported text.",
@@ -818,21 +780,7 @@ apiRoutes.openapi(
   }),
   (c) => {
     const post = requirePost(c.req.valid("param").id);
-    const posts = post.thread.map((s) => s.text);
-    const alreadyLive = Math.min(post.xPostIds.length, posts.length);
-    const remaining = post.thread.slice(alreadyLive);
-    return c.json(
-      {
-        text: threadToText(post.thread),
-        posts,
-        intentUrl: `https://x.com/intent/post?text=${encodeURIComponent(posts[0] ?? "")}`,
-        alreadyLive,
-        remainingText: threadToText(remaining),
-        remainingPosts: remaining.map((s) => s.text),
-        replyToUrl: alreadyLive ? `https://x.com/i/status/${post.xPostIds[alreadyLive - 1]}` : null,
-      },
-      200,
-    );
+    return c.json({ text: threadToText(post.thread), posts: post.thread.map((s) => s.text) }, 200);
   },
 );
 
@@ -981,7 +929,7 @@ apiRoutes.openapi(
     description:
       "Per destination: the items it will publish (its own version or the post's thread; LinkedIn joins the posts into one), each counted the way that platform counts " +
       "(X weighted: Vietnamese letters like ệ and emoji 2, URLs 23; Bluesky graphemes; Mastodon URLs 23; Threads emoji = their UTF-8 bytes; others code points) against the account's limit, and `problem`: " +
-      "what would make publishing there fail before anything is posted (null = ready). A post without targets gives one entry for the legacy single-X mode (accountId null). " +
+      "what would make publishing there fail before anything is posted (null = ready); no entries for a post without targets. " +
       "Check it before scheduling or publishing.",
     request: { params: IdParam },
     responses: { 200: json(PreviewSchema, "One entry per destination."), 404: E404 },
@@ -1151,7 +1099,7 @@ apiRoutes.openapi(
     operationId: "getConfig",
     summary: "Read the scheduling config",
     description:
-      "Timezone, character limit and posting slots from yaypost.config.json (PUT /config/timezone and /config/slots change them; edits to the file apply too). " +
+      "Timezone and posting slots from yaypost.config.json (PUT /config/timezone and /config/slots change them; edits to the file apply too). " +
       "If an edit is invalid, the previous config stays in use and `configError` says what is wrong.",
     responses: { 200: json(ConfigSchema, "Current config.") },
   }),
@@ -1219,18 +1167,14 @@ apiRoutes.openapi(
     operationId: "getHealth",
     summary: "Server status and capabilities",
     description:
-      "Call first: tells you the X character limit, timezone, whether posts without destinations go out automatically through the .env X keys (x.mode api) " +
-      "or need a human (manual), and whether AI routes work. Connected accounts for other platforms (and other X accounts): GET /accounts.",
+      "Call first: tells you the timezone, whether publishing is paused and whether AI routes work. Where posts can go: GET /accounts.",
     responses: { 200: json(HealthSchema, "OK.") },
   }),
   (c) => {
-    const { timezone, maxChars } = getConfig();
     const health: Health = {
       ok: true,
       version: VERSION,
-      timezone,
-      maxChars,
-      x: { configured: xConfigured, mode: xConfigured ? "api" : "manual" },
+      timezone: getConfig().timezone,
       ai: aiStatus(),
       paused: Boolean(pauseState()),
       auth: { required: Boolean(env.authToken) },

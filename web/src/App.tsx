@@ -195,11 +195,10 @@ function Shell({ health }: { health: Health }) {
             sessionKey={composerKey(postId)}
             postId={postId}
             slot={params.get("slot")}
-            fromReminder={params.get("copy") === "1"}
             health={health}
           />
         )}
-        {view === "queue" && <QueueView health={health} tab={params.get("tab") === "published" ? "published" : "upcoming"} reminders={reminders} />}
+        {view === "queue" && <QueueView health={health} tab={params.get("tab") === "published" ? "published" : "upcoming"} />}
         {view === "settings" && <SettingsView health={health} section={section} />}
       </main>
 

@@ -1,9 +1,9 @@
 // Queue: the next 14 days grouped by day (posts + open slots), with due/failed actions, and the published list.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Calendar1, CalendarClock, CalendarDays, CircleCheck, Columns3, List, Copy, ExternalLink, Image, LoaderCircle, Plus, RotateCcw, TriangleAlert } from "lucide-react";
+import { Calendar1, CalendarClock, CalendarDays, CircleCheck, Columns3, List, ExternalLink, Image, LoaderCircle, Plus, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Health, Post, QueueDay, QueueItem } from "../../../shared/types.ts";
-import { api, liveSummary, remainingThread } from "../api.ts";
+import { api } from "../api.ts";
 import { ApprovalPill } from "../components/Approval.tsx";
 import { CalendarView, type CalendarMode } from "./CalendarView.tsx";
 import { SlotsDialog } from "./SlotsDialog.tsx";
@@ -11,9 +11,7 @@ import { TimezonePicker } from "../components/TimezonePicker.tsx";
 import { Tip } from "../components/Tip.tsx";
 import { Tabs } from "../components/Tabs.tsx";
 import { TargetIcons, TargetList } from "../components/TargetStatus.tsx";
-import { toast, toastError } from "../components/Toasts.tsx";
-import type { useReminders } from "../connect/Reminders.tsx";
-import { copyThread } from "../lib/live.ts";
+import { toastError } from "../components/Toasts.tsx";
 import { navigate, newDraft, openPost } from "../lib/router.ts";
 import { PlatformIcon, usePlatforms } from "../lib/platforms.tsx";
 import { dayKey, formatDate, formatTime, formatWhen, relativeDay } from "../lib/time.ts";
@@ -40,14 +38,13 @@ export function StatusBadge({ status }: { status: Post["status"] }) {
 interface Props {
   health: Health;
   tab: "upcoming" | "published";
-  reminders: ReturnType<typeof useReminders>;
 }
 
 type Layout = "list" | CalendarMode;
 const LAYOUT_KEY = "yaypost.queueLayout";
 const wide = () => matchMedia("(min-width: 640px)").matches;
 
-export function QueueView({ health, tab, reminders }: Props) {
+export function QueueView({ health, tab }: Props) {
   const [stored, setStored] = useState<Layout>(() => {
     const saved = localStorage.getItem(LAYOUT_KEY);
     return saved === "day" || saved === "week" || saved === "month" ? saved : "list";
@@ -81,18 +78,6 @@ export function QueueView({ health, tab, reminders }: Props) {
                 <CalendarClock size={14} />
               </button>
             </Tip>
-            {/* Manual mode depends on reminders: offer them where the times are, not as a paragraph. */}
-            {health.x.mode === "manual" && reminders.state === "off" && (
-              <Tip content="Get notified at posting time, even with this tab closed">
-                <button
-                  onClick={() => reminders.enable.mutate()}
-                  disabled={reminders.enable.isPending}
-                  className="flex h-7 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 font-medium text-ink-2 hover:border-line-strong hover:text-ink"
-                >
-                  <Bell size={12} /> Remind me
-                </button>
-              </Tip>
-            )}
           </span>
           <div className="flex items-center gap-2">
           {(
@@ -253,32 +238,19 @@ function PostRow({ post, at, date, tz }: { post: Post; at: string; date: string;
     onSuccess: () => qc.invalidateQueries({ queryKey: ["queue"] }),
     onError: (e) => toastError("Retry failed", e),
   });
-  const mark = useMutation({
-    mutationFn: (url?: string) => api.markPublished(post.id, url),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["queue"] });
-      void qc.invalidateQueries({ queryKey: ["posts"] });
-      toast({ title: "Marked as posted", tone: "success" });
-    },
-    onError: (e) => toastError("Couldn't mark as posted", e),
-  });
-  const [askUrl, setAskUrl] = useState(false);
-  const [url, setUrl] = useState("");
   const multi = post.targets.length > 0;
-  const due = post.status === "due" && !multi;
-  const missed = post.status === "due" && multi;
+  const missed = post.status === "due";
   const failed = post.status === "failed";
   const action = "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium";
   // Overdue posts from earlier days are listed under today: show their own date so they don't read as today's.
   const day = dayKey(at, tz);
   const otherDay = day !== date;
-  const { live, rest, intent } = remainingThread(post);
 
   return (
     <div
       className={cx(
         "rounded-xl border transition-colors",
-        due || missed
+        missed
           ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30"
           : failed
             ? "border-red-200 bg-surface dark:border-red-900"
@@ -321,48 +293,6 @@ function PostRow({ post, at, date, tz }: { post: Post; at: string; date: string;
           <button onClick={() => retry.mutate()} disabled={retry.isPending} className={cx(action, "bg-ink text-canvas")}>
             {retry.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />} Publish now
           </button>
-        </div>
-      )}
-      {due && (
-        <div className="flex flex-wrap items-center gap-2 px-3 pb-3 sm:pl-27">
-          {live > 0 ? (
-            <p className="w-full text-xs break-words text-amber-900 dark:text-amber-200">
-              {liveSummary(live)}: post the remaining {rest.length} as {rest.length > 1 ? "replies" : "a reply"} to post {live}.
-            </p>
-          ) : (
-            post.error && <p className="w-full text-xs break-words text-amber-900 dark:text-amber-200">{post.error}</p>
-          )}
-          <button onClick={() => void copyThread(post.id)} className={cx(action, "bg-ink text-canvas hover:opacity-90")}>
-            <Copy size={13} /> {live > 0 ? `Copy remaining ${rest.length}` : "Copy thread"}
-          </button>
-          <a href={intent} target="_blank" rel="noopener noreferrer" className={cx(action, "border border-line bg-surface hover:bg-subtle")}>
-            <ExternalLink size={13} /> {live > 0 ? `Reply to post ${live} in X` : "Open in X"}
-          </a>
-          {askUrl ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                mark.mutate(url.trim() || undefined);
-              }}
-              className="flex min-w-0 flex-1 gap-1.5"
-            >
-              <input
-                autoFocus
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Link on X (optional)"
-                className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-canvas px-2.5 text-xs focus:border-line-strong"
-              />
-              <button type="submit" disabled={mark.isPending} className={cx(action, "border border-line bg-surface hover:bg-subtle")}>
-                <CircleCheck size={13} /> Done
-              </button>
-            </form>
-          ) : (
-            <button onClick={() => setAskUrl(true)} className={cx(action, "border border-line bg-surface hover:bg-subtle")}>
-              <CircleCheck size={13} /> Mark posted
-            </button>
-          )}
         </div>
       )}
     </div>

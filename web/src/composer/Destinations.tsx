@@ -1,7 +1,7 @@
 // Where this post goes: connected-account chips, then tabs for the shared thread and per-account versions.
 import { Check, CircleAlert, GitFork, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Account, Health, Post, Segment } from "../../../shared/types.ts";
+import type { Account, Post, Segment } from "../../../shared/types.ts";
 import { Popover } from "../components/Popover.tsx";
 import { Tabs } from "../components/Tabs.tsx";
 import { navigate } from "../lib/router.ts";
@@ -15,7 +15,6 @@ interface Props {
   /** The shared thread: a destination's snapshot of what it posted only gets its own tab when it differs. */
   shared: Segment[] | null;
   post: Post | null;
-  health: Health;
   readOnly: boolean;
   version: string | null;
   onToggle: (account: Account) => void;
@@ -127,7 +126,7 @@ export function Destinations(p: Props) {
         })}
         {!p.targets.length && (
           <span className="text-xs text-ink-3">
-            None selected · {p.health.x.mode === "api" ? "goes to X with the server's API keys" : "you'll copy & post it to X yourself"}
+            None selected · pick at least one to schedule or publish
           </span>
         )}
         {!p.readOnly && p.accounts.length === 0 && (

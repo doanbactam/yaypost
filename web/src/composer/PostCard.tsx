@@ -11,7 +11,7 @@ import { Tip } from "../components/Tip.tsx";
 import { cx } from "../lib/util.ts";
 import { CharRing } from "./CharRing.tsx";
 
-export const MAX_IMAGES = 4; // X's limit, the default when no other destination is selected
+export const MAX_IMAGES = 4; // the default until a destination is selected
 
 export interface ImageRule {
   name: string;
@@ -28,7 +28,7 @@ interface Props {
   segment: Segment;
   index: number;
   total: number;
-  /** One counter per destination platform (just X in single-X mode); the ring shows the strictest. */
+  /** One counter per destination platform; the ring shows the strictest. */
   meters: Meter[];
   maxImages: number;
   /** Selected platforms that accept only some image types (Threads, LinkedIn) or sizes (Bluesky): a thumbnail they'd refuse is flagged. */
@@ -236,7 +236,7 @@ export function PostCard(p: Props) {
                 <Trash2 size={15} />
               </button>
             )}
-            {ring && <CharRing length={ring.length} max={ring.max} platform={p.meters.length > 1 || ring.platform !== "x" ? ring.label : undefined} named={p.meters.length === 1} />}
+            {ring && <CharRing length={ring.length} max={ring.max} platform={ring.label} named={p.meters.length === 1} />}
           </div>
         )}
       </div>

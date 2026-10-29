@@ -188,7 +188,7 @@ function apiFor(entry: Entry): YaypostAPI {
     },
     env: (name) => process.env[name]?.trim() || undefined,
     settings: () => resolveSettings(record).values,
-    host: () => ({ timezone: getConfig().timezone, maxChars: getConfig().maxChars, publicUrl: publicUrl(), publicUrlIsSet: Boolean(env.publicUrl) }),
+    host: () => ({ timezone: getConfig().timezone, publicUrl: publicUrl(), publicUrlIsSet: Boolean(env.publicUrl) }),
     store: { get: (key) => kv.get(storeKey(key)), set: (key, value) => kv.set(storeKey(key), value) },
     media: {
       get: (id) => {

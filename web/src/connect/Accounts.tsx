@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CircleAlert, ExternalLink, LoaderCircle, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { useState } from "react";
-import type { Account, Health, Post } from "../../../shared/types.ts";
+import type { Account, Post } from "../../../shared/types.ts";
 import { api, ApiError, type Platform } from "../api.ts";
 import { Card } from "../components/Card.tsx";
 import { Tip } from "../components/Tip.tsx";
@@ -18,7 +18,7 @@ import { cx } from "../lib/util.ts";
 const field = "h-9 w-full rounded-lg border border-line bg-canvas px-3 text-sm text-ink placeholder:text-ink-3 focus:border-line-strong";
 const smallBtn = "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-ink-2 hover:bg-subtle hover:text-ink disabled:opacity-50";
 
-export function Accounts({ health }: { health: Health }) {
+export function Accounts() {
   const { data: accounts, isPending } = useAccounts();
   const platforms = usePlatforms();
   // true opens the platform picker; a platform id opens that platform's form directly.
@@ -38,7 +38,7 @@ export function Accounts({ health }: { health: Health }) {
       ) : accounts?.length ? (
         <ul className="-mx-1 divide-y divide-line">
           {accounts.map((a) => (
-            <AccountRow key={a.id} account={a} health={health} />
+            <AccountRow key={a.id} account={a} />
           ))}
         </ul>
       ) : (
@@ -57,7 +57,7 @@ export function Accounts({ health }: { health: Health }) {
           ))}
         </div>
       )}
-      {connecting && <ConnectDialog health={health} initial={typeof connecting === "string" ? connecting : undefined} onClose={() => setConnecting(false)} />}
+      {connecting && <ConnectDialog initial={typeof connecting === "string" ? connecting : undefined} onClose={() => setConnecting(false)} />}
     </Card>
   );
 }
@@ -72,7 +72,7 @@ async function blockingPosts(accountId: string): Promise<Post[]> {
   }
 }
 
-function AccountRow({ account: a, health }: { account: Account; health: Health }) {
+function AccountRow({ account: a }: { account: Account }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ["accounts"] });
@@ -129,7 +129,7 @@ function AccountRow({ account: a, health }: { account: Account; health: Health }
             ))}
         </p>
         <p className="text-xs text-ink-3">
-          {platforms.name(a.platform)} · <LimitEditor account={a} health={health} />
+          {platforms.name(a.platform)} · <LimitEditor account={a} />
           {a.verifiedAt && ` · checked ${timeAgo(a.verifiedAt)}`}
         </p>
         {a.lastError && (
@@ -159,12 +159,12 @@ function AccountRow({ account: a, health }: { account: Account; health: Health }
 }
 
 /** "300 characters" with a small editor for the per-account override (X Premium, an instance's own limit). */
-function LimitEditor({ account: a, health }: { account: Account; health: Health }) {
+function LimitEditor({ account: a }: { account: Account }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(a.maxChars ? String(a.maxChars) : "");
   const platforms = usePlatforms();
-  const fallback = a.platform === "x" ? health.maxChars : (platforms.get(a.platform)?.maxChars ?? health.maxChars);
+  const fallback = limitFor({ ...a, maxChars: null }, platforms);
   const save = useMutation({
     mutationFn: (maxChars: number | null) => api.updateAccount(a.id, { maxChars }),
     onSuccess: () => {
@@ -177,7 +177,7 @@ function LimitEditor({ account: a, health }: { account: Account; health: Health 
     <Popover
       trigger={
         <button className="underline decoration-dotted underline-offset-2 hover:text-ink">
-          {limitFor(a, health, platforms)} characters{a.maxChars ? " (custom)" : ""}
+          {limitFor(a, platforms)} characters{a.maxChars ? " (custom)" : ""}
         </button>
       }
       open={open}
@@ -203,7 +203,7 @@ function LimitEditor({ account: a, health }: { account: Account; health: Health 
   );
 }
 
-function ConnectDialog({ health, initial, onClose }: { health: Health; initial?: string; onClose: () => void }) {
+function ConnectDialog({ initial, onClose }: { initial?: string; onClose: () => void }) {
   const { data: list, isPending, error } = usePlatformList();
   const [picked, setPlatform] = useState<Platform | null>(null);
   const [skipInitial, setSkipInitial] = useState(false);
@@ -211,7 +211,7 @@ function ConnectDialog({ health, initial, onClose }: { health: Health; initial?:
   return (
     <Dialog title={platform ? `Connect ${platform.name}` : "Connect an account"} onClose={onClose}>
       {platform ? (
-        <ConnectForm key={platform.id} info={platform} health={health} onBack={() => (setPlatform(null), setSkipInitial(true))} onDone={onClose} />
+        <ConnectForm key={platform.id} info={platform} onBack={() => (setPlatform(null), setSkipInitial(true))} onDone={onClose} />
       ) : isPending ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {Array.from({ length: 6 }, (_, i) => (
@@ -243,7 +243,7 @@ function ConnectDialog({ health, initial, onClose }: { health: Health; initial?:
   );
 }
 
-function ConnectForm({ info, health, onBack, onDone }: { info: Platform; health: Health; onBack: () => void; onDone: () => void }) {
+function ConnectForm({ info, onBack, onDone }: { info: Platform; onBack: () => void; onDone: () => void }) {
   const qc = useQueryClient();
   const platform = info.id;
   const [values, setValues] = useState<Record<string, string>>({});
@@ -266,7 +266,7 @@ function ConnectForm({ info, health, onBack, onDone }: { info: Platform; health:
     // The platform's own reason (bad token, wrong instance…) belongs next to the fields, not in a toast.
     onError: (e) => (e instanceof ApiError && e.status === 400 ? setError(e.message) : toastError("Couldn't connect", e)),
   });
-  const fallback = platform === "x" ? health.maxChars : info.maxChars;
+  const fallback = info.maxChars;
   return (
     <form
       onSubmit={(e) => {

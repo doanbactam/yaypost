@@ -145,7 +145,7 @@ export function setAccountError(id: string, error: string | null): void {
 
 /**
  * Remove an account. Refused while it is a destination of posts that haven't gone out yet, because those posts
- * would silently lose it (and a post with no destinations falls back to the .env X / manual mode).
+ * would silently lose it.
  */
 export function deleteAccount(id: string): void {
   requireOwner("remove accounts");

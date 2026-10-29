@@ -1,6 +1,6 @@
-// Composer footer: add to queue (showing the real next slot), pick a time, publish now, copy, open in X.
+// Composer footer: add to queue (showing the real next slot), pick a time, publish now, copy.
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Copy, ExternalLink, LoaderCircle, RotateCcw, Send } from "lucide-react";
+import { CalendarClock, Copy, LoaderCircle, RotateCcw, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Health, Post } from "../../../shared/types.ts";
 import { api } from "../api.ts";
@@ -16,11 +16,7 @@ interface Props {
   health: Health;
   post: Post | null;
   empty: boolean;
-  /** X intent for the first post not on X yet (a reply when earlier posts of the thread are live). */
-  openInX: string;
-  /** How many posts are already live on X. */
-  live: number;
-  /** Connected accounts this post goes to; with any, "Publish now" works without X keys in .env. */
+  /** Connected accounts this post goes to; "Publish now" needs at least one. */
   destinations: number;
   slotTarget: string | null;
   pickerOpen: boolean;
@@ -43,7 +39,6 @@ export function ScheduleBar(p: Props) {
   const { data: slots } = useQuery({ queryKey: ["slots"], queryFn: () => api.nextSlots(5), refetchInterval: 60_000 });
   const next = p.slotTarget ?? slots?.[0] ?? null;
   const scheduled = p.post?.status === "scheduled" && p.post.scheduledAt;
-  const apiMode = p.health.x.mode === "api" || p.destinations > 0;
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [publishHelp, setPublishHelp] = useState(false);
 
@@ -58,24 +53,11 @@ export function ScheduleBar(p: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-1 sm:flex-nowrap sm:gap-1.5">
-      <Tip content={<>{p.live ? "Copy the posts not on X yet" : "Copy thread"} <kbd className="opacity-60">{keys.copy}</kbd></>}>
-        <button onClick={p.onCopy} disabled={p.empty} className={ghost} aria-label={p.live ? "Copy remaining posts" : "Copy thread"}>
+      <Tip content={<>Copy thread <kbd className="opacity-60">{keys.copy}</kbd></>}>
+        <button onClick={p.onCopy} disabled={p.empty} className={ghost} aria-label="Copy thread">
           <Copy size={16} />
           <span className="max-sm:hidden">Copy</span>
         </button>
-      </Tip>
-      <Tip content={p.live ? `Open in X: post ${p.live + 1} as a reply to post ${p.live}` : "Open in X with the first post filled in"}>
-        <a
-          href={p.empty ? undefined : p.openInX}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-disabled={p.empty}
-          className={cx(ghost, p.empty && "pointer-events-none opacity-40")}
-          aria-label="Open in X"
-        >
-          <ExternalLink size={16} />
-          <span className="max-sm:hidden">Open in X</span>
-        </a>
       </Tip>
 
       <div className="flex-1" />
@@ -111,8 +93,8 @@ export function ScheduleBar(p: Props) {
             {p.retry.published ? "Retry the failed ones" : "Retry"}
           </button>
         </div>
-      ) : !apiMode ? (
-        // Nowhere to auto-post yet: a tap (touch has no hover) says why and how to fix it, instead of a dead button.
+      ) : !p.destinations ? (
+        // Nowhere to publish yet: a tap (touch has no hover) says why and how to fix it, instead of a dead button.
         <Popover
           trigger={
             <button aria-disabled className={cx(ghost, "opacity-40 hover:opacity-70")} aria-label="Publish now (unavailable)">
@@ -127,7 +109,7 @@ export function ScheduleBar(p: Props) {
           className="w-72"
         >
           <p className="text-sm font-medium">Nowhere to publish yet</p>
-          <p className="mt-1 text-xs text-ink-3">Publishing goes through a connected account. Until one is on, copy the thread and post it on X yourself.</p>
+          <p className="mt-1 text-xs text-ink-3">Publishing goes through a connected account. Choose one under Destinations, or connect one first.</p>
           <button
             onClick={() => navigate("/settings/accounts")}
             className="mt-3 flex h-8 w-full items-center justify-center rounded-lg bg-ink text-sm font-medium text-canvas hover:opacity-90"

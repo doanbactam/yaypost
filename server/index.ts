@@ -2,7 +2,7 @@
 import { serve } from "@hono/node-server";
 import { app } from "./app.ts";
 import { getConfig } from "./config.ts";
-import { env, publicUrl, VERSION, xConfigured } from "./env.ts";
+import { env, publicUrl, VERSION } from "./env.ts";
 import { sendToAll, startPush } from "./push.ts";
 import { startAccountChecks } from "./accounts.ts";
 import { startAudit } from "./audit.ts";
@@ -33,12 +33,15 @@ const stopOperator = startOperator();
 
 const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, () => {
   console.log(`Yaypost ${VERSION} → ${publicUrl()}`);
-  console.log(`  timezone ${config.timezone} · publishing: ${xConfigured ? "X API v2" : "manual (notify + copy) — add X keys to .env to auto-post"}`);
+  console.log(`  timezone ${config.timezone}`);
   const chats = channelStatuses().filter((c) => c.configured).map((c) => c.id);
   const broken = listPlugins().filter((p) => p.error).length;
   console.log(`  plugins: ${listPlugins().filter((p) => !p.error && !p.disabled).length} loaded${broken ? `, ${broken} failed (GET /api/plugins)` : ""} · platforms: ${listPlatforms().map((p) => p.id).join(", ") || "none"}`);
   console.log(`  approvals: ${getConfig().approval.require === "never" ? "off (agents publish directly)" : "agents need your OK"} · chats: ${chats.join(", ") || "none (approve in the web UI)"}`);
   console.log(`  API docs ${publicUrl()}/docs · MCP ${publicUrl()}/mcp · agents ${publicUrl()}/llms.txt`);
+  if (process.env.X_API_KEY?.trim()) {
+    console.warn("⚠ X_API_KEY and the other X_* keys in .env are no longer read. Connect X as an account (Settings › Accounts) with the same keys.");
+  }
   if (!env.authToken && env.host !== "127.0.0.1" && env.host !== "localhost") {
     console.warn("⚠ Listening beyond localhost without AUTH_TOKEN — anyone who can reach this port can post as you.");
   }

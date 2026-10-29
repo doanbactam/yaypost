@@ -175,6 +175,10 @@ const MIGRATIONS = [
   );
   CREATE INDEX webhook_deliveries_hook ON webhook_deliveries(webhook_id, at);
   `,
+  // Posts without destinations (the .env single-X mode) are gone; X is a connected account like any other platform.
+  `
+  ALTER TABLE posts DROP COLUMN x_post_ids;
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

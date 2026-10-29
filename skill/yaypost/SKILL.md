@@ -10,8 +10,8 @@ per-platform counting, resumable publishing, scheduling and engagement data, and
 nothing you queue is published until they approve it: they get the exact preview in the web UI and in their
 Telegram/Discord chat and press Approve, Request changes or Reject. It stores drafts and threads, counts characters the way each
 platform does, queues posts into posting slots, and publishes them to the user's connected accounts on X, Bluesky,
-Mastodon, Threads, LinkedIn, Telegram and Discord. A post with no destinations uses the original single-X mode: the
-X API keys in the server's .env, or (manual mode) a notification at the scheduled time so the user pastes it into X.
+Mastodon, Threads, LinkedIn, Telegram and Discord. A post needs at least one destination before it can be scheduled
+or published; without one it stays a draft.
 
 ## Reaching it
 
@@ -31,8 +31,7 @@ Prefer, in this order:
    `/openapi.json` is the full spec.
 
 Start with `yaypost health --json` and `yaypost accounts --json` (or `get_settings`, which has both) to learn
-the connected accounts, the X mode for posts without destinations (`api` or `manual`), X's per-post limit (`maxChars`),
-the timezone, the approval policy and whether publishing is paused. Then `yaypost reviews` / `list_reviews`: posts the user
+the connected accounts and their per-post limits, the timezone, the approval policy and whether publishing is paused. Then `yaypost reviews` / `list_reviews`: posts the user
 sent back with feedback come first. If the server isn't reachable, tell the
 user how to start it (`pnpm start` or `pnpm dev` in the Yaypost folder) rather than guessing.
 
@@ -54,7 +53,7 @@ user how to start it (`pnpm start` or `pnpm dev` in the Yaypost folder) rather t
    Never delete without their go-ahead.
 5. **Save**: `yaypost new --file draft.txt --to bluesky,mastodon --version x=x.txt --at next --json` (or
    `create_post` with `to`, `versions` and `schedule: "next"`), then `yaypost preview <id>` / `preview_post` and
-   fix every `problem`. Leave out `--to` / `to` only for the legacy single-X mode.
+   fix every `problem`.
    An exact time is ISO-8601 with an offset, e.g. `2026-11-03T09:00:00+07:00`. Without an offset
    (`2026-11-03T09:00`) the server reads it in its configured `timezone`; a date alone or a past time is refused.
 6. **Report**: what you queued, for when, and that it waits for their approval. When they request changes
@@ -97,7 +96,7 @@ Ids can be shortened to a unique prefix in the CLI. Piping works: `cat draft.txt
 
 | Platform | Limit per post | Counting | Images per post | Cost |
 |---|---|---|---|---|
-| X | 280 (`maxChars`; Premium more) | weighted: CJK, emoji, Vietnamese ạ ệ ố… 2; URLs 23 | 4 | Paid API: ~$0.015/post, ~$0.20 with a link |
+| X | 280 (Premium: set on the account) | weighted: CJK, emoji, Vietnamese ạ ệ ố… 2; URLs 23 | 4 | Paid API: ~$0.015/post, ~$0.20 with a link |
 | Bluesky | 300 | graphemes; URLs count in full | 4 | Free |
 | Mastodon | 500 (instance may differ) | code points; URLs 23 | 4 | Free |
 | Threads | 500 | code points; each emoji = its UTF-8 bytes (usually 4) | 20 (JPEG/PNG) | Free (Meta app needed) |
@@ -151,7 +150,7 @@ auto-plug rule or evergreen recycler, because you do these better with the data:
 
 ## Counting and limits
 
-- X's limit is `maxChars` from the server: 280 for standard accounts, larger for X Premium. Other platforms: the table above.
+- X's limit is 280 for standard accounts; a Premium account has its own limit set on the account. Other platforms: the table above.
 - X weighs characters: most Latin text counts 1; CJK characters and each emoji count 2; every URL counts 23.
   Vietnamese letters from Unicode's Latin Extended Additional block (ạ, ả, ấ, ầ, ệ, ố, ộ, ở, ữ, ự, ỳ…) count 2,
   while á, à, ã, é, í, ó, ú, ý, â, ê, ô, ơ, ư, ă, đ count 1, so Vietnamese posts fill up sooner than they look.
@@ -159,11 +158,7 @@ auto-plug rule or evergreen recycler, because you do these better with the data:
 
 ## Honest constraints
 
-- **Manual mode** (a post with no destinations and no X API keys on the server): nothing is posted automatically. At the scheduled time the user gets a
-  browser notification, copies the thread (Copy button, `yaypost copy`, or the X intent link, which only prefills
-  the first post) and posts it by hand, then marks it posted. Say this plainly when you schedule in manual mode, and
-  never claim something "will be posted" automatically.
-- **X's API costs money per post** (the .env keys and connected X accounts alike; every other platform is free). On X's pay-per-use API each post costs about $0.015, and a post containing a URL
+- **X's API costs money per post** (every other platform is free). On X's pay-per-use API each post costs about $0.015, and a post containing a URL
   about $0.20. A thread is billed per post (6 posts ≈ $0.09). Avoid gratuitous links; mention the cost when the user
   publishes something long or link-heavy.
 - **Publishing is public and irreversible.** With approval on, `publish` / `publish_now` asks the user and goes out once they
@@ -171,10 +166,9 @@ auto-plug rule or evergreen recycler, because you do these better with the data:
   Deleting in Yaypost never removes anything already published anywhere.
 - **Failed threads resume.** `retry` continues after the last item that went out on each destination, so it doesn't duplicate.
   Posts already live are locked: an edit that changes, removes or reorders them is refused (409); edit only the
-  posts after them. To finish such a thread by hand, `yaypost copy` (or `export_thread`'s `remainingText`)
-  gives only the posts not yet live, to post as replies under `replyToUrl`.
+  posts after them.
 - **Missed times are not posted late unattended.** If the server was off when a post was due and it is more than
   `lateGraceMinutes` (default 60) late, it becomes `due` with `error` explaining why. Ask the user whether to
-  publish it now (`retry` in API mode), post it by hand, or reschedule it.
+  publish it now (`retry`), post it by hand (`yaypost copy`, then `posted`), or reschedule it.
 - **Approval is enforced by the server**, not by these instructions: pending and sent-back posts never publish, and
   deciding needs the user. Don't look for ways around it; if something must go out urgently, say so in the post's title.

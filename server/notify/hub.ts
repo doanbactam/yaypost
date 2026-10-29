@@ -83,7 +83,7 @@ async function onEvent(e: AppEvent): Promise<void> {
     case "post.failed":
       return broadcast(`❌ ${postName(e.post)} failed to publish.\n${e.post.error ?? ""}\n${postLink(e.post.id)}`);
     case "post.due":
-      return broadcast(`⏰ ${postName(e.post)} needs you: ${e.post.error ?? "post it by hand (manual mode)."}\n${postLink(e.post.id)}`);
+      return broadcast(`⏰ ${postName(e.post)} needs you: ${e.post.error ?? "publish it, post it by hand, or reschedule it."}\n${postLink(e.post.id)}`);
     case "publishing.paused":
       return broadcast(`⏸ Publishing paused by ${e.by.replace(/^owner:/, "")}${e.reason ? `: ${e.reason}` : ""}. Nothing goes out until you resume.`, [
         { label: "▶️ Resume publishing", action: "resume" },

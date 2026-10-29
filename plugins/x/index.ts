@@ -1,5 +1,4 @@
-// X as a Yaypost platform: the person's own OAuth 1.0a keys (connected account, or the legacy .env mode, where
-// the core passes { apiKey, apiSecret, accessToken, accessTokenSecret } from .env and a stand-in account).
+// X as a Yaypost platform: the person's own OAuth 1.0a keys, entered when connecting the account.
 // Metrics: GET /2/tweets public_metrics via readPostMetrics (api.ts has the doc links). Reads are billed.
 import type { Credentials, ItemMetrics, YaypostAPI } from "yaypost/plugin";
 import { createXClient, type XPublicMetrics } from "./api.ts";
@@ -12,7 +11,7 @@ export default function (ts: YaypostAPI) {
     const creds = { consumerKey: c.apiKey ?? "", consumerSecret: c.apiSecret ?? "", token: c.accessToken ?? "", tokenSecret: c.accessTokenSecret ?? "" };
     if (!creds.consumerKey || !creds.consumerSecret || !creds.token || !creds.tokenSecret) {
       throw new ts.PlatformError(
-        "X API keys are missing: the API key, API key secret, access token and access token secret are all needed (for the .env mode: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET in .env, then restart).",
+        "X API keys are missing: the API key, API key secret, access token and access token secret are all needed.",
         401,
       );
     }
@@ -22,10 +21,8 @@ export default function (ts: YaypostAPI) {
   ts.registerPlatform({
     id: "x",
     name: "X",
-    // X's default limit is the server setting (yaypost.config.json maxChars), read each time it is asked for.
-    get maxChars() {
-      return ts.host().maxChars;
-    },
+    // Standard accounts; X Premium accounts set their own limit on the account (up to 25,000).
+    maxChars: 280,
     maxImages: 4,
     threadMode: "replies",
     counting: { method: "x-weighted" },

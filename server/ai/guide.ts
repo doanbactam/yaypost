@@ -2,7 +2,6 @@
 import type { PlatformDefinition } from "../plugin-api.ts";
 import { listPlatforms } from "../plugins.ts";
 import { getConfig } from "../config.ts";
-import { xConfigured } from "../env.ts";
 
 /** The platform's counting rule in words. */
 function counting(p: PlatformDefinition): string {
@@ -21,7 +20,7 @@ const MODE = { replies: "reply chain", single: "joined into one post", messages:
 /** Markdown table of every platform's limits, counting, thread mode and cost (shared by the guide and llms.txt). */
 export function platformTable(): string {
   const rows = listPlatforms().map((p) => {
-    const limit = p.id === "x" ? `${p.maxChars} (config maxChars)` : String(p.maxChars);
+    const limit = String(p.maxChars);
     const images = `${p.maxImages}${p.imageTypes ? ` (${p.imageTypes.map((t) => t.replace("image/", "")).join("/")})` : ""}`;
     return `| ${p.name} | ${limit} | ${counting(p)} | ${images} | ${MODE[p.threadMode]} | ${p.costNote} |`;
   });
@@ -29,10 +28,9 @@ export function platformTable(): string {
 }
 
 export function threadGuide(): string {
-  const { maxChars, timezone, lateGraceMinutes } = getConfig();
-  const late = !xConfigured
-    ? ""
-    : lateGraceMinutes > 0
+  const { timezone, lateGraceMinutes } = getConfig();
+  const late =
+    lateGraceMinutes > 0
       ? `- A scheduled post that missed its time by more than ${lateGraceMinutes} minutes (Yaypost was offline) is not posted late unattended:
   it becomes **due**, with an \`error\` saying why. Ask the person whether to publish it now, copy it, or reschedule it.\n`
       : "- A scheduled post that missed its time while Yaypost was offline is published as soon as Yaypost is back.\n";
@@ -40,18 +38,18 @@ export function threadGuide(): string {
 
 ## Format and limits
 - A thread is one text with a line containing only \`---\` between posts (or an array of posts). A single post is a thread of one.
-- Each post may use ${maxChars} characters as X counts them: most Latin letters, digits and punctuation count 1;
-  CJK characters and each emoji count 2; Vietnamese letters from Unicode's Latin Extended Additional block (ạ, ả, ấ, ệ, ố, ở, ữ…)
-  count 2, while á, à, ã, é, ó, ơ, ư, đ and the like count 1; every link counts 23.
+- Each platform has its own per-post limit and counts its own way (table below); an account can override its limit (e.g. X Premium).
+  X weighs characters: most Latin letters, digits and punctuation count 1; CJK characters and each emoji count 2; Vietnamese letters
+  from Unicode's Latin Extended Additional block (ạ, ả, ấ, ệ, ố, ở, ữ…) count 2, while á, à, ã, é, ó, ơ, ư, đ and the like count 1; every link counts 23.
   Check with the \`count_characters\` tool (MCP) or \`yaypost count\` (CLI) before saving or scheduling.
-- Up to 4 images per post (png, jpeg, webp, gif; ≤ 5 MB each). Give every image alt text.
+- Images: png, jpeg, webp or gif, ≤ 5 MB each; how many per post depends on the platform (table below). Give every image alt text.
 - Times are ISO-8601 date-times in the future: \`2026-11-03T09:00\` is read in the configured timezone (${timezone});
   \`2026-11-03T09:00:00+07:00\` or \`2026-11-03T02:00:00Z\` is exact. Dates without a time are rejected. \`"next"\` means the next free posting slot from yaypost.config.json.
 
 ## Destinations (connected accounts)
 - A post goes to the connected accounts in its \`targets\` (MCP: \`to\`, by id, label, handle or platform name; CLI: \`--to\`). Each destination
   publishes, fails and resumes on its own; the post is published when all are, failed when any is (see each destination's error).
-- A post without destinations uses the legacy single-X mode described below (the .env X keys, or manual copy & post).
+- A post needs at least one destination to be scheduled or published; without one it stays a draft.
 - Each destination can get its own version of the thread (MCP \`versions\`, CLI \`--version ref=file\`, REST \`targets[].thread\`), e.g. a
   tighter X thread and one long LinkedIn post. Without one it publishes the main thread, so the main thread must fit every destination.
 - Platforms count differently: the same Vietnamese post can fit Bluesky (300 graphemes) and be over on X (280 weighted). Check each destination
@@ -61,10 +59,8 @@ export function threadGuide(): string {
 ${platformTable()}
 
 ## How publishing works on this instance
-- X mode (posts without destinations): ${xConfigured ? "**api** — scheduled posts are published automatically through the X API." : "**manual** — no X API keys. At the scheduled time the person gets a notification and copies the thread into X by hand; afterwards mark it published."}
-${late}- If a thread fails partway through publishing, the posts already on X (\`xPostIds\`) are locked: they can't be edited, removed or reordered.
-  Fix only the posts after them, then retry; it resumes after the last live post. To finish it by hand, export it and post only
-  the remaining posts (\`remainingText\` / \`remainingPosts\`) as replies under \`replyToUrl\`.
+${late}- If a thread fails partway through publishing, the posts already live on a destination are locked: they can't be edited, removed or reordered.
+  Fix only the posts after them, then retry; it resumes after the last live post on each destination.
 - On X's pay-per-use API each post costs about $0.015, and a post that contains a link about $0.20. A 6-post thread is 6 posts.
   Every other platform is free to post to.
   Avoid gratuitous links; if the person wants a link, put it in the last post (or a reply) rather than the first.

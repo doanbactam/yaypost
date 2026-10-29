@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { listAccounts } from "./accounts.ts";
 import { threadGuide } from "./ai/guide.ts";
 import { getConfig } from "./config.ts";
-import { env, xConfigured } from "./env.ts";
+import { env } from "./env.ts";
 import { mcpCatalog } from "./mcp.ts";
 import { operatorStatus } from "./operator.ts";
 import { platformName } from "./plugins.ts";
@@ -28,12 +28,12 @@ llmsRoutes.get("/llms.txt", (c) => {
   const base = origin(c.req.url);
   return c.text(`# Yaypost
 
-> The publishing layer for AI agents: draft, check, schedule and publish posts and threads on X, Bluesky, Mastodon, Threads, LinkedIn, Telegram and Discord, read their engagement and continue threads. Agents do the work; the person keeps the credentials and only decides: they approve, send back or reject what agents queue, from the web UI or their Telegram/Discord chat, and can pause everything. Draft once, give each platform its own version if needed, count characters the way each platform does, queue posts into time slots, and publish to every connected account (or, for X without accounts, by copy-paste when a notification fires). Everything the UI does is available to agents over REST, MCP, a CLI, webhooks and server-sent events.
+> The publishing layer for AI agents: draft, check, schedule and publish posts and threads on X, Bluesky, Mastodon, Threads, LinkedIn, Telegram and Discord, read their engagement and continue threads. Agents do the work; the person keeps the credentials and only decides: they approve, send back or reject what agents queue, from the web UI or their Telegram/Discord chat, and can pause everything. Draft once, give each platform its own version if needed, count characters the way each platform does, queue posts into time slots, and publish to every connected account. Everything the UI does is available to agents over REST, MCP, a CLI, webhooks and server-sent events.
 
 Base URL: ${base}. ${authLine()}
 ${approvalLine()}
-Threads are one text with a line containing only \`---\` between posts (or an array of segments). Times are ISO-8601 date-times (without an offset they are read in ${getConfig().timezone}); \`"next"\` means the next free posting slot. X limit: ${getConfig().maxChars} weighted characters per post; other platforms: \`GET /api/platforms\`.
-Destinations: a post's \`targets\` are connected accounts (\`GET /api/accounts\`), each optionally with its own version; a post without targets uses the legacy single-X mode (.env X keys, or manual copy & post). \`GET /api/posts/{id}/preview\` shows what each destination gets and whether it fits. Posting through X's API is paid per post; the other platforms are free.
+Threads are one text with a line containing only \`---\` between posts (or an array of segments). Times are ISO-8601 date-times (without an offset they are read in ${getConfig().timezone}); \`"next"\` means the next free posting slot. Per-platform limits: \`GET /api/platforms\` (an account's own \`maxChars\` overrides it).
+Destinations: a post's \`targets\` are connected accounts (\`GET /api/accounts\`), each optionally with its own version; a post without targets can only be a draft. \`GET /api/posts/{id}/preview\` shows what each destination gets and whether it fits. Posting through X's API is paid per post; the other platforms are free.
 
 ## Docs
 - [Full agent guide](${base}/llms-full.txt): conventions, workflows, every route and MCP tool, CLI usage and writing guidance in one file
@@ -43,7 +43,7 @@ Destinations: a post's \`targets\` are connected accounts (\`GET /api/accounts\`
 ## Agent interfaces
 - [MCP endpoint](${base}/mcp): Streamable HTTP, stateless. Claude Code: \`claude mcp add --transport http yaypost ${base}/mcp${env.authToken ? ' --header "Authorization: Bearer <AUTH_TOKEN>"' : ""}\`${env.authToken ? `. Clients that can't send headers (claude.ai / ChatGPT connectors) use ${base}/mcp?token=<AUTH_TOKEN> over HTTPS` : ""}
 - [CLI](${base}/llms-full.txt): zero-dependency Node script \`cli/yaypost.mjs\` (\`yaypost new "text" --at next\`, \`yaypost queue\`, \`--json\` everywhere); set YAYPOST_URL and YAYPOST_TOKEN
-- [Health](${base}/api/health): version, X mode (api or manual), whether publishing is paused, timezone and limit
+- [Health](${base}/api/health): version, whether publishing is paused, timezone
 - [Approvals](${base}/api/approvals): what waits for the person or was sent back with changes; [control](${base}/api/control): approval policy, pause, chats, operator
 - [Accounts](${base}/api/accounts) and [platforms](${base}/api/platforms): where posts can go, each platform's limits, counting rule (as data) and cost
 - [Plugins](${base}/api/plugins): every platform and approval chat is a plugin; this lists what is loaded (and why a plugin failed)
@@ -84,34 +84,32 @@ llmsRoutes.get("/llms-full.txt", async (c) => {
 - Connected accounts: ${
     accounts.length
       ? accounts.map((a) => `${a.label} (${platformName(a.platform)}${a.handle ? ` ${a.handle}` : ""}, id ${a.id}${a.lastError ? `, ERROR: ${a.lastError}` : ""})`).join("; ")
-      : "none yet (posts use the legacy single-X mode until the person connects accounts in the UI)"
+      : "none yet (nothing can be scheduled or published until the person connects accounts in the UI)"
   }
-- X mode for posts without destinations: ${xConfigured ? "api — scheduled posts publish automatically through the X API" : "manual — no X API keys; at the scheduled time the person is notified and copies the thread into X, then marks it published"}
 - ${approvalLine()}
 - Built-in operator: ${op.enabled ? `on (${op.model ?? "Claude"}), next run ${op.nextRunAt ?? "not scheduled"}` : `off${op.reason ? ` (${op.reason})` : ""}`}
-- Timezone: ${config.timezone}; X limit: ${config.maxChars} weighted characters per post (other platforms below)
+- Timezone: ${config.timezone}
 - Auth: ${authLine()}
 
 ## Conventions
 - Thread format: one string with a line containing only \`---\` between posts, or \`thread: [{text, mediaIds?}]\`. A single post is a thread of one.
 - Destinations: \`targets: [{accountId, thread?}]\` on POST/PATCH /api/posts. \`thread\` is that account's own version (null = the post's thread;
-  omitted on PATCH = keep the current one). \`targets: []\` or none = legacy single-X mode. Each target has its own \`status\`, \`externalIds\`
+  omitted on PATCH = keep the current one). Scheduling or publishing a post without targets answers 409. Each target has its own \`status\`, \`externalIds\`
   (items live there), \`url\` and \`error\`; the post is \`published\` when all are, \`failed\` when any failed (retry resumes only those).
   LinkedIn joins a thread into one post; Telegram and Discord send consecutive messages; the others post a reply chain.
 - Accounts: \`GET /api/accounts\`; connecting (\`POST /api/accounts {platform, credentials, label?, maxChars?}\`, verified first, 400 with the
   platform's reason) needs the person's secrets, so leave it to them. \`POST /api/accounts/{id}/check\` re-verifies; \`DELETE\` is refused (409)
   while unfinished posts still target the account.
-- Counting: X's weighted count. Most Latin text counts 1 per character; CJK and emoji count 2; Vietnamese letters from Unicode's
+- Counting: each platform its own way (table in the guide below). X weighs characters: most Latin text counts 1 per character; CJK and emoji count 2; Vietnamese letters from Unicode's
   Latin Extended Additional block (ạ, ả, ấ, ệ, ố, ở, ữ…) count 2, while á, à, ã, é, ó, ơ, ư, đ and the like count 1; every URL counts 23.
-  Other platforms count their own way (table in the guide below); the same Vietnamese post can fit Bluesky and be over on X.
+  The same Vietnamese post can fit Bluesky and be over on X.
 - Statuses: draft → scheduled → publishing → published, or failed (see \`error\`; retry resumes a thread without duplicates).
-  \`due\` means the post waits for the person: in manual mode every scheduled post becomes due at its time and is posted by hand${
+${
     config.lateGraceMinutes > 0
-      ? `; in api mode a post that missed its time by more than ${config.lateGraceMinutes} minutes (the server was down) becomes due instead of going out late, with \`error\` saying why`
+      ? `  \`due\` means the post waits for the person: it missed its time by more than ${config.lateGraceMinutes} minutes (the server was down) and did not go out late; \`error\` says why.
+  \`POST /api/posts/{id}/publish\` or \`/retry\` on a due post publishes it.\n`
       : ""
-  }.
-  With X API keys, \`POST /api/posts/{id}/publish\` or \`/retry\` on a due post publishes it.
-- Partly published threads: if publishing fails mid-thread, the first \`xPostIds.length\` posts are live on X and locked;
+  }- Partly published threads: if publishing fails mid-thread, the first \`externalIds.length\` items of that destination are live and locked;
   a PATCH that changes, removes or reorders them answers 409. Edit only the posts after them, then retry.
 - Times: ISO-8601 date-times. With \`Z\` or an offset (\`2026-11-03T09:00:00+07:00\`) they are exact; without one (\`2026-11-03T09:00\`) they are read in ${config.timezone}.
   Date-only and free-form values and times in the past answer 400. \`"next"\` = next free slot from yaypost.config.json.
@@ -122,15 +120,14 @@ llmsRoutes.get("/llms-full.txt", async (c) => {
 - Kill switch: \`POST /api/control/pause {reason}\` stops every publish until the person resumes; use it when something goes wrong.
 
 ## Recommended workflow
-1. \`GET /api/health\` (mode, limit, timezone, paused), \`GET /api/config\` (slots, voice examples count) and \`GET /api/approvals\` (anything sent back to you).
+1. \`GET /api/health\` (timezone, paused), \`GET /api/config\` (slots, voice examples count) and \`GET /api/approvals\` (anything sent back to you).
 2. Pick destinations: \`GET /api/accounts\`.
 3. Draft in the person's voice and language; check counts per platform (MCP \`count_characters {platform}\`, CLI \`yaypost count --platform p\`).
    Where one thread can't suit every destination, write per-destination versions.
 4. Queue it: \`POST /api/posts {text, targets, title, scheduledAt: "next" | ISO}\`, then \`GET /api/posts/{id}/preview\` and fix every \`problem\`.
    With approval on, this is the request: the person gets the exact preview and decides; follow up on \`post.changes_requested\` (webhook/SSE or \`GET /api/approvals\`).
 5. Report what you queued and when it would go out, in their timezone. \`GET /api/queue?days=7\` shows the timeline with free slots.
-6. Manual mode (posts without destinations): \`GET /api/posts/{id}/export\` gives text + an X intent URL; after posting, \`POST /api/posts/{id}/mark-published {url?}\`.
-   If \`alreadyLive\` > 0 (a thread that failed partway through an API publish), post only \`remainingText\` / \`remainingPosts\`, as replies under \`replyToUrl\`.
+6. Posting by hand (e.g. a due post): \`GET /api/posts/{id}/export\` gives the text; after posting, \`POST /api/posts/{id}/mark-published {url?}\`.
 7. Images: \`POST /api/media\` (multipart \`file\`, \`alt\`) or \`POST /api/media/from-url {url, alt}\`, then put the media id in a segment's \`mediaIds\`
    (per-platform maximum and accepted types in the table below).
 Publishing is irreversible: with approval off, ask the person before publishing; never delete what they didn't ask you to.

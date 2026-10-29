@@ -1,8 +1,8 @@
 // X-style progress ring for the strictest destination's count; shows what's left near the limit and −N over it.
 import { cx } from "../lib/util.ts";
 
-/** `platform` names the destination the ring measures when it isn't plain single-X mode. */
-export function CharRing({ length, max, platform, named }: { length: number; max: number; platform?: string; named?: boolean }) {
+/** `platform` names the destination the ring measures. */
+export function CharRing({ length, max, platform, named }: { length: number; max: number; platform: string; named?: boolean }) {
   const left = max - length;
   const near = left <= Math.min(20, Math.round(max * 0.08));
   const over = left < 0;
@@ -12,14 +12,12 @@ export function CharRing({ length, max, platform, named }: { length: number; max
   return (
     <div
       className="flex items-center gap-1.5 tabular-nums"
-      title={platform ? `${length} / ${max} characters on ${platform}` : `${length} / ${max} characters (X's weighted count)`}
-      aria-label={
-        over ? `${-left} characters over the ${platform ? `${platform} ` : ""}limit` : `${left} characters left${platform ? ` on ${platform}` : ""}`
-      }
+      title={`${length} / ${max} characters on ${platform}`}
+      aria-label={over ? `${-left} characters over the ${platform} limit` : `${left} characters left on ${platform}`}
     >
       {near && (
         <span className={cx("text-xs font-medium", over ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400")}>
-          {over && platform && named ? `${platform} −${-left}` : over ? `−${-left}` : left}
+          {over && named ? `${platform} −${-left}` : over ? `−${-left}` : left}
         </span>
       )}
       <svg width="22" height="22" viewBox="0 0 22 22" className={cx("-rotate-90 transition-transform", near && "scale-110")}>

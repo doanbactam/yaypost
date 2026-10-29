@@ -31,13 +31,6 @@ export const env = {
   /** Extra hostnames accepted in the Host header when no AUTH_TOKEN is set (comma-separated). */
   allowedHosts: (str("ALLOWED_HOSTS") ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
 
-  x: {
-    apiKey: str("X_API_KEY"),
-    apiSecret: str("X_API_SECRET"),
-    accessToken: str("X_ACCESS_TOKEN"),
-    accessSecret: str("X_ACCESS_TOKEN_SECRET"),
-  },
-
   ai: {
     /** "anthropic" or "zai"; when unset, whichever key is present (Anthropic first). */
     provider: str("AI_PROVIDER")?.toLowerCase(),
@@ -64,8 +57,6 @@ if (env.agentToken && !env.authToken) {
   throw new Error("AGENT_TOKEN needs AUTH_TOKEN too: without it, a request with no token would act as the owner and could approve its own posts.");
 }
 if (env.agentToken && env.agentToken === env.authToken) throw new Error("AGENT_TOKEN must differ from AUTH_TOKEN.");
-
-export const xConfigured = Boolean(env.x.apiKey && env.x.apiSecret && env.x.accessToken && env.x.accessSecret);
 
 export function publicUrl(): string {
   return env.publicUrl ?? `http://${env.host === "0.0.0.0" ? "localhost" : env.host}:${env.port}`;

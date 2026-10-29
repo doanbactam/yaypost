@@ -16,9 +16,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { joinThread, splitThread, weightedLength } from "../../../shared/thread.ts";
+import { joinThread, splitThread } from "../../../shared/thread.ts";
 import type { Account, Health, Post, Segment } from "../../../shared/types.ts";
-import { api, ApiError, intentUrl, liveSummary, remainingThread } from "../api.ts";
+import { api, ApiError } from "../api.ts";
 import { ApprovalPill } from "../components/Approval.tsx";
 import { Popover } from "../components/Popover.tsx";
 import { dismissToast, toast, toastError } from "../components/Toasts.tsx";
@@ -41,8 +41,8 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const LAST_TARGETS = "yaypost:lastTargets";
 
-/** "Post 1 is already live on X" / "Posts 1–3 are already live on Bluesky". */
-const liveText = (n: number, where: string) => (where === "X" ? liveSummary(n) : `${n === 1 ? "Post 1 is" : `Posts 1–${n} are`} already live on ${where}`);
+/** "Posts 1–3 are already live on Bluesky". */
+const liveText = (n: number, where: string) => `${n === 1 ? "Post 1 is" : `Posts 1–${n} are`} already live on ${where}`;
 
 function pref(key: string, fallback: boolean): boolean {
   try {
@@ -154,14 +154,12 @@ interface Props {
   sessionKey: string;
   postId: string | null;
   slot: string | null;
-  fromReminder: boolean;
   health: Health;
 }
 
 export function Composer(props: Props) {
   const { health, sessionKey } = props;
   const qc = useQueryClient();
-  const maxChars = health.maxChars;
 
   const onCreated = useCallback(
     (post: Post) => {
@@ -182,36 +180,29 @@ export function Composer(props: Props) {
   // The version on screen already went out to its account: nothing in it can change.
   const versionProgress = version ? post?.targets.find((t) => t.accountId === version) : undefined;
   const viewLocked = readOnly || versionProgress?.status === "published";
-  // A thread that stopped partway (on X, or on a destination using the thread on screen): its first posts are live,
+  // A thread that stopped partway on a destination using the thread on screen: its first posts are live,
   // so they can't change (Retry resumes by position).
   const live = useMemo(() => {
-    const none = { count: 0, where: "X", url: (_i: number): string | null => null };
-    if (viewLocked || !post || !thread) return none;
-    let best = { count: post.xPostIds.length, where: "X", url: (i: number): string | null => `https://x.com/i/status/${post.xPostIds[i]}` };
+    let best = { count: 0, where: "", url: (_i: number): string | null => null };
+    if (viewLocked || !post || !thread) return best;
     for (const t of post.targets) {
       const mine = version ? t.accountId === version : !t.thread;
       if (!mine || t.status === "published" || platforms.threadMode(t.platform) === "single") continue;
       if (version || t.externalIds.length > best.count) best = { count: t.externalIds.length, where: platforms.name(t.platform), url: (i) => (i === 0 ? t.url : null) };
     }
-    if (version && best.where === "X") return none;
     return { ...best, count: Math.min(best.count, thread.length) };
   }, [viewLocked, post, thread, version, platforms]);
   const liveCount = live.count;
   const isLocked = (index: number) => viewLocked || index < liveCount;
 
   // Who the thread on screen goes to: the version's account, or every destination without its own version.
-  // No destinations at all = the original single-X mode (X's weighted count against the config limit).
-  const legacy = targets.length === 0;
   const activeAccounts = (version ? [version] : targets.filter((t) => !t.thread).map((t) => t.accountId))
     .map(accountOf)
     .filter((a): a is Account => Boolean(a));
-  const metersFor = (seg: Segment): Meter[] =>
-    legacy
-      ? [{ key: "x", label: "X", platform: "x", length: weightedLength(seg.text), max: maxChars }]
-      : postMeters(seg.text, seg.mediaIds.length, activeAccounts, health, platforms);
-  const joined = legacy || !thread ? [] : activeAccounts.filter((a) => platforms.threadMode(a.platform) === "single").map((a) => joinedMeter(thread, a, health, platforms));
+  const metersFor = (seg: Segment): Meter[] => postMeters(seg.text, seg.mediaIds.length, activeAccounts, platforms);
+  const joined = !thread ? [] : activeAccounts.filter((a) => platforms.threadMode(a.platform) === "single").map((a) => joinedMeter(thread, a, platforms));
   const maxImages =
-    legacy || !activeAccounts.length ? MAX_IMAGES : Math.min(...activeAccounts.map((a) => platforms.get(a.platform)?.maxImages ?? MAX_IMAGES));
+    !activeAccounts.length ? MAX_IMAGES : Math.min(...activeAccounts.map((a) => platforms.get(a.platform)?.maxImages ?? MAX_IMAGES));
   const imageRules = activeAccounts
     .map((a) => platforms.get(a.platform))
     .filter((info, i, all): info is NonNullable<typeof info> => !!info && !!(info.imageTypes || info.maxImageBytes) && all.findIndex((b) => b?.id === info.id) === i)
@@ -225,7 +216,7 @@ export function Composer(props: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [slotTarget, setSlotTarget] = useState(props.slot);
   /** Why a destination would refuse the post, from the last pre-flight check; cleared by the next edit. */
-  const [refusals, setRefusals] = useState<{ accountId: string | null; label: string; problem: string }[] | null>(null);
+  const [refusals, setRefusals] = useState<{ accountId: string; label: string; problem: string }[] | null>(null);
   /** What the refused action was: the banner says "Not queued", "Not published", or that a scheduled post would fail. */
   const [refusedAction, setRefusedAction] = useState<"queue" | "publish" | "scheduled">("queue");
 
@@ -329,14 +320,13 @@ export function Composer(props: Props) {
    * refuse to queue or publish when any would be rejected.
    */
   const destinationsAccept = async (id: string, action: "queue" | "publish" | "scheduled"): Promise<boolean> => {
-    if (!draft.targets.length) return true;
     const preview = await api.preview(id);
     const bad = preview.filter((t) => t.problem).map((t) => ({ accountId: t.accountId, label: t.label, problem: t.problem! }));
     if (!bad.length) return true;
     setRefusals(bad);
     setRefusedAction(action);
     const first = bad[0]!;
-    const acct = first.accountId ? accountOf(first.accountId) : undefined;
+    const acct = accountOf(first.accountId);
     const forkable = acct && !draft.targets.find((t) => t.accountId === acct.id)?.thread;
     toast({
       id: "preflight",
@@ -439,8 +429,12 @@ export function Composer(props: Props) {
     );
   };
 
-  // Single-X mode only; with destinations the server's pre-flight (destinationsAccept) decides.
-  const overLimit = () => (draft.targets.length ? -1 : (draft.sharedThread ?? []).findIndex((s) => weightedLength(s.text) > maxChars));
+  const noDestination = () =>
+    toast({
+      title: "Choose a destination first",
+      description: "Pick where this post goes under Destinations, or connect an account in Settings.",
+      tone: "error",
+    });
 
   const slotPassed = (at: string) =>
     toast({
@@ -463,14 +457,8 @@ export function Composer(props: Props) {
   /** Save, then schedule. "next" lets the server pick the next free slot. */
   const schedule = async (at: string) => {
     if (empty) return toast({ title: "Write something first" });
+    if (!targets.length) return noDestination();
     if (at !== "next" && Date.parse(at) < Date.now() - 60_000) return slotPassed(at);
-    const over = overLimit();
-    if (over >= 0)
-      return toast({
-        title: `Post ${over + 1} is over the ${maxChars} limit`,
-        description: "Shorten it before scheduling.",
-        tone: "error",
-      });
     setBusy("queue");
     try {
       await draft.flush();
@@ -505,15 +493,6 @@ export function Composer(props: Props) {
     }
     if (post?.status === "scheduled" && post.scheduledAt) {
       const when = formatWhen(post.scheduledAt, health.timezone);
-      const over = overLimit();
-      if (over >= 0)
-        return toast({
-          id: "still-scheduled",
-          title: `Post ${over + 1} is over the ${maxChars} limit`,
-          description: `It's still scheduled for ${when} and would fail then. Shorten it, or unschedule it.`,
-          tone: "error",
-          duration: 12_000,
-        });
       void (async () => {
         try {
           await draft.flush();
@@ -544,27 +523,19 @@ export function Composer(props: Props) {
   };
 
   const publishNow = async () => {
-    if (overLimit() >= 0) return toast({ title: "A post is over the character limit", tone: "error" });
+    if (!targets.length) return noDestination();
     setBusy("publish");
     try {
       await draft.flush();
       if (!(await destinationsAccept(draft.currentId()!, "publish"))) return;
       const result = await api.publish(draft.currentId()!);
       draft.setPost(result);
-      if (result.targets.length) {
-        const ok = result.targets.filter((t) => t.status === "published").length;
-        toast(
-          result.status === "published"
-            ? { id: `published-${result.id}`, title: `Published to ${ok === 1 ? "1 destination" : `${ok} destinations`}`, tone: "success" }
-            : { id: `failed-${result.id}`, title: `Published to ${ok} of ${result.targets.length} destinations`, description: "See what failed above the thread.", tone: "error" },
-        );
-      } else if (result.status === "published")
-        toast({
-          id: `published-${result.id}`,
-          title: "Posted to X",
-          tone: "success",
-          actions: result.url ? [{ label: "View on X", onClick: () => open(result.url!, "_blank", "noopener") }] : undefined,
-        });
+      const ok = result.targets.filter((t) => t.status === "published").length;
+      toast(
+        result.status === "published"
+          ? { id: `published-${result.id}`, title: `Published to ${ok === 1 ? "1 destination" : `${ok} destinations`}`, tone: "success" }
+          : { id: `failed-${result.id}`, title: `Published to ${ok} of ${result.targets.length} destinations`, description: "See what failed above the thread.", tone: "error" },
+      );
     } catch (e) {
       toastError("Couldn't publish", e);
     } finally {
@@ -641,10 +612,9 @@ export function Composer(props: Props) {
       { id: "copy", group: "Thread", title: "Copy thread", icon: Copy, shortcut: keys.copy, run: () => void a().copyThread() },
       { id: "text", group: "Thread", title: "Toggle text mode", icon: AlignLeft, keywords: "cards markdown plain", run: () => a().toggleText() },
     ];
-    if (health.x.mode === "api" || hasTargets)
-      list.push({ id: "publish", group: "Thread", title: "Publish now", icon: Send, run: () => void a().publishNow() });
+    if (hasTargets) list.push({ id: "publish", group: "Thread", title: "Publish now", icon: Send, run: () => void a().publishNow() });
     return list;
-  }, [health.x.mode, hasTargets]);
+  }, [hasTargets]);
   useCommands("composer", commands);
 
   if (draft.missing)
@@ -660,9 +630,6 @@ export function Composer(props: Props) {
     );
 
   const showText = textMode && !viewLocked && liveCount === 0;
-  // "Open in X" prefills the first post that isn't on X yet, as a reply when earlier posts are live.
-  const shared = draft.sharedThread;
-  const openInX = post && shared ? remainingThread({ ...post, thread: shared }).intent : intentUrl(shared?.[0]?.text ?? "");
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -742,7 +709,6 @@ export function Composer(props: Props) {
                 targets={targets}
                 shared={draft.sharedThread}
                 post={post}
-                health={health}
                 readOnly={readOnly}
                 version={version}
                 onToggle={toggleTarget}
@@ -760,7 +726,7 @@ export function Composer(props: Props) {
                 </p>
                 <ul className="mt-1 space-y-0.5 text-xs">
                   {refusals.map((r) => (
-                    <li key={r.accountId ?? "x"}>
+                    <li key={r.accountId}>
                       <span className="font-medium">{r.label}:</span> {r.problem}
                     </li>
                   ))}
@@ -772,9 +738,6 @@ export function Composer(props: Props) {
               <StatusBanner
                 post={post}
                 health={health}
-                fromReminder={props.fromReminder}
-                onCopy={copyThread}
-                onPublish={publishNow}
                 flush={draft.flush}
                 onChange={draft.setPost}
               />
@@ -847,7 +810,7 @@ export function Composer(props: Props) {
                 {m.length > m.max && " · too long, shorten it or customize a version"}
               </p>
             ))}
-            {!legacy && !version && !activeAccounts.length && thread && !readOnly && targets.some((t) => t.thread && !t.snapshot) && (
+            {targets.length > 0 && !version && !activeAccounts.length && thread && !readOnly && targets.some((t) => t.thread && !t.snapshot) && (
               <p className="mb-2 ml-10 text-xs text-ink-3">Every destination has its own version, so this shared thread isn't posted anywhere.</p>
             )}
 
@@ -871,8 +834,6 @@ export function Composer(props: Props) {
                 health={health}
                 post={post}
                 empty={empty}
-                openInX={openInX}
-                live={version ? 0 : liveCount}
                 destinations={targets.length}
                 slotTarget={slotTarget}
                 pickerOpen={pickerOpen}

@@ -1,6 +1,5 @@
 {
   "timezone": "Asia/Ho_Chi_Minh",
-  "maxChars": 280,
   "slots": [
     {
       "days": "mon-fri",
