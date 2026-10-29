@@ -1,0 +1,26 @@
+{
+  "name": "yaypost-plugin-webhook",
+  "version": "1.0.0",
+  "description": "Example third-party plugin: a 'Webhook' platform that POSTs each post as JSON to a URL (n8n, Zapier, Make, Slack workflows, your own service).",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "yaypost-plugin"
+  ],
+  "yaypost": {
+    "apiVersion": 1,
+    "entry": "index.ts",
+    "settings": [
+      {
+        "key": "maxChars",
+        "label": "Character limit per item",
+        "type": "number",
+        "default": 10000,
+        "help": "What your endpoint accepts."
+      }
+    ]
+  },
+  "peerDependencies": {
+    "yaypost": "*"
+  }
+}

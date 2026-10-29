@@ -1,0 +1,9 @@
+{
+  "name": "linkedin",
+  "version": "1.0.0",
+  "description": "Publish to LinkedIn as a member post via the Posts API: a thread becomes one post, up to 20 images, hashtags kept.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

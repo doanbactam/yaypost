@@ -1,0 +1,9 @@
+{
+  "name": "bluesky",
+  "version": "1.0.0",
+  "description": "Publish to Bluesky over AT Protocol with an app password: threads as replies, link/hashtag/mention facets, images with alt text, public metrics.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

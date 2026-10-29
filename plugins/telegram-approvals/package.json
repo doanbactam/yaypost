@@ -1,0 +1,41 @@
+{
+  "name": "telegram-approvals",
+  "version": "1.0.0",
+  "description": "Approval chat on Telegram: approval requests with inline buttons, replies as change requests, and /pending /status /pause /resume /run commands, over Bot API long polling (no public URL needed).",
+  "private": true,
+  "keywords": [
+    "yaypost-plugin"
+  ],
+  "yaypost": {
+    "apiVersion": 1,
+    "entry": "index.ts",
+    "settings": [
+      {
+        "key": "botToken",
+        "label": "Bot token",
+        "secret": true,
+        "required": true,
+        "env": "TELEGRAM_APPROVAL_BOT_TOKEN",
+        "placeholder": "123456:ABC…",
+        "help": "From @BotFather → /newbot. Use a bot only for approvals, not one that publishes."
+      },
+      {
+        "key": "chatId",
+        "label": "Chat id",
+        "env": "TELEGRAM_APPROVAL_CHAT_ID",
+        "placeholder": "987654321",
+        "help": "Usually empty: save the token, then open the Connect link under Approval chats. A group id works too."
+      },
+      {
+        "key": "approverIds",
+        "label": "Who may decide",
+        "env": "TELEGRAM_APPROVER_IDS",
+        "placeholder": "987654321, 123456789",
+        "help": "Telegram user ids, comma-separated. Empty: anyone in that chat."
+      }
+    ]
+  },
+  "peerDependencies": {
+    "yaypost": "*"
+  }
+}

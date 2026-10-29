@@ -1,0 +1,9 @@
+{
+  "name": "telegram",
+  "version": "1.0.0",
+  "description": "Publish to a Telegram channel or group via a bot: a thread becomes consecutive messages, each replying to the previous one; photos and albums.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

@@ -1,0 +1,22 @@
+node_modules
+dist
+*.tsbuildinfo
+.cache/
+.local/
+
+# Your data, secrets and settings
+data
+.env
+.env.*
+!.env.example
+yaypost.config.json
+operator.md
+
+# Editors, OS and agent scratch
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+.amp/
+.claude/
