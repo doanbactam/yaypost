@@ -26,8 +26,8 @@ export interface PluginInfo {
   name: string;
   version: string;
   description: string | null;
-  /** built-in: plugins/ · data: <DATA_DIR>/plugins/ · config: plugins.load · installed: from the UI or API. */
-  source: "built-in" | "data" | "config" | "installed";
+  /** built-in: plugins/ · data: <DATA_DIR>/plugins/ · config: plugins.load. */
+  source: "built-in" | "data" | "config";
   platforms: string[];
   channels: string[];
   /** Why it isn't loaded; null when it is. */
@@ -35,10 +35,6 @@ export interface PluginInfo {
   disabled: boolean;
   /** Switched off in yaypost.config.json (plugins.disable); the UI can't switch it on. */
   disabledByConfig: boolean;
-  /** A newer version is installed; it runs after a restart. */
-  restartRequired: boolean;
-  /** What it was installed from (installed plugins only). */
-  spec: string | null;
   /** It declares settings (GET /plugins/settings). */
   hasSettings: boolean;
   /** Required settings with no value yet. */
@@ -57,19 +53,6 @@ export interface PluginSettings {
 export interface PluginsState {
   plugins: PluginInfo[];
   apiVersion: number;
-  /** npm is available, so plugins can be installed from here. */
-  canInstall: boolean;
-  restartRequired: boolean;
-}
-export interface CatalogPackage {
-  name: string;
-  version: string;
-  description: string | null;
-  date: string | null;
-  publisher: string | null;
-  npmUrl: string;
-  repositoryUrl: string | null;
-  installed: boolean;
 }
 
 const TOKEN_KEY = "yaypost_token";
@@ -219,19 +202,11 @@ export const api = {
 
   platforms: () => call<{ platforms: Platform[] }>("GET", "/api/platforms").then((r) => r.platforms),
   plugins: () => call<PluginsState>("GET", "/api/plugins"),
-  pluginCatalog: (query = "") => call<{ keyword: string; packages: CatalogPackage[] }>("GET", `/api/plugins/catalog${q({ q: query.trim() })}`),
-  installPlugin: (spec: string) => call<PluginsState & { plugin: PluginInfo }>("POST", "/api/plugins/install", { body: { spec } }),
-  installPluginFile: (file: File) => {
-    const form = new FormData();
-    form.set("file", file);
-    return call<PluginsState & { plugin: PluginInfo }>("POST", "/api/plugins/install-file", { body: form });
-  },
-  pluginAction: (action: "enable" | "disable" | "update" | "uninstall", name: string) =>
+  pluginAction: (action: "enable" | "disable", name: string) =>
     call<PluginsState>("POST", `/api/plugins/${action}`, { body: { name } }),
   pluginSettings: (name: string) => call<PluginSettings>("GET", `/api/plugins/settings${q({ name })}`),
   savePluginSettings: (name: string, values: Record<string, SettingValue>) =>
     call<PluginSettings & { plugin: PluginInfo }>("POST", "/api/plugins/settings", { body: { name, values } }),
-  restart: () => call<{ restarting: true }>("POST", "/api/system/restart"),
   accounts: () => call<{ accounts: Account[] }>("GET", "/api/accounts").then((r) => r.accounts),
   connectAccount: (body: { platform: PlatformId; credentials: Record<string, string>; label?: string; maxChars?: number }) =>
     call<Account>("POST", "/api/accounts", { body }),

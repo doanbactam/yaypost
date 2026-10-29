@@ -1,4 +1,6 @@
 // Single process: HTTP server + scheduler loop + event fan-out (webhooks, approval chats).
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { serve } from "@hono/node-server";
 import { app } from "./app.ts";
 import { getConfig } from "./config.ts";
@@ -37,19 +39,21 @@ const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (
   if (process.env.X_API_KEY?.trim()) {
     console.warn("⚠ X_API_KEY and the other X_* keys in .env are no longer read. Connect X as an account (Settings › Accounts) with the same keys.");
   }
+  if (existsSync(path.join(env.dataDir, "plugin-packages"))) {
+    console.warn("⚠ Plugins installed from the old Plugins page (<DATA_DIR>/plugin-packages) are no longer loaded. Move each into <DATA_DIR>/plugins/ or list it in plugins.load.");
+  }
   if (!env.authToken && env.host !== "127.0.0.1" && env.host !== "localhost") {
     console.warn("⚠ Listening beyond localhost without AUTH_TOKEN — anyone who can reach this port can post as you.");
   }
 });
 
-/** Stop taking work, let a publish in progress finish (up to 30 s), then exit (75 when a restart was asked for). */
+/** Stop taking work, let a publish in progress finish (up to 30 s), then exit. */
 async function shutdown() {
   stopNotify();
-  const code = typeof process.exitCode === "number" ? process.exitCode : 0;
-  setTimeout(() => process.exit(code), 30_000).unref();
+  setTimeout(() => process.exit(0), 30_000).unref();
   await stopScheduler();
-  server.close(() => process.exit(code));
-  setTimeout(() => process.exit(code), 3000).unref();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
 }
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());

@@ -529,20 +529,12 @@ function describe(e: AuditEntry, tz: string): string {
       return `${who} paused publishing${d ? `: ${quote(d)}` : ""}`;
     case "publishing.resumed":
       return `${who} resumed publishing`;
-    case "plugin.installed":
-      return `${who} installed the plugin ${d ?? ""}`.trim();
-    case "plugin.updated":
-      return `${who} updated the plugin ${d ?? ""}`.trim();
-    case "plugin.uninstalled":
-      return `${who} uninstalled the plugin ${d ?? ""}`.trim();
     case "plugin.enabled":
       return `${who} switched on the plugin ${d ?? ""}`.trim();
     case "plugin.disabled":
       return `${who} switched off the plugin ${d ?? ""}`.trim();
     case "plugin.settings_changed":
       return `${who} changed plugin settings${d ? ` (${d.replace(/:.*/, "")})` : ""}`;
-    case "system.restart":
-      return `${who} restarted Yaypost`;
     default:
       return `${who}: ${e.action}${d ? ` ${quote(d)}` : ""}`;
   }

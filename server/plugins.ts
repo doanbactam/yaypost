@@ -1,6 +1,5 @@
 // Plugin loader and registry. Platforms and approval channels exist only as plugins: the built-in ones in plugins/,
-// extra ones from <DATA_DIR>/plugins/, yaypost.config.json → plugins.load, and packages the person installed from
-// the UI (server/plugin-install.ts, into <DATA_DIR>/plugin-packages). Each plugin directory has a package.json with a
+// extra ones from <DATA_DIR>/plugins/ and yaypost.config.json → plugins.load. Each plugin directory has a package.json with a
 // "yaypost" key ({ apiVersion, entry? }) and an entry module whose default export receives the YaypostAPI (see
 // server/plugin-api.ts). A plugin that fails to load is skipped and reported (GET /api/plugins); it never takes the
 // server down. Plugins can be switched on and off while running: deactivating removes what they registered and
@@ -14,7 +13,6 @@ import type { Account } from "../shared/types.ts";
 import { getConfig } from "./config.ts";
 import { db, kv } from "./db.ts";
 import { env, publicUrl, ROOT } from "./env.ts";
-import { installedPackageDirs } from "./plugin-packages.ts";
 import { bus } from "./events.ts";
 import { signedMediaUrl } from "./media.ts";
 import {
@@ -44,8 +42,8 @@ export interface PluginRecord {
   name: string;
   version: string;
   description: string | null;
-  /** built-in: plugins/ · data: <DATA_DIR>/plugins/ · config: plugins.load · installed: from the UI or API. */
-  source: "built-in" | "data" | "config" | "installed";
+  /** built-in: plugins/ · data: <DATA_DIR>/plugins/ · config: plugins.load. */
+  source: "built-in" | "data" | "config";
   dir: string;
   platforms: string[];
   channels: string[];
@@ -54,8 +52,6 @@ export interface PluginRecord {
   disabled: boolean;
   /** Switched off in yaypost.config.json → plugins.disable: only the config file turns it back on. */
   disabledByConfig: boolean;
-  /** New code is on disk (an update) but the running server still has the old one: restart to use it. */
-  restartRequired: boolean;
   /** The settings form, from package.json → "yaypost".settings. */
   settingsFields: SettingField[];
 }
@@ -99,8 +95,8 @@ const Manifest = z.object({
   }),
 });
 
-/** Read and check a plugin's package.json (used before installing, too). */
-export function readManifest(dir: string): z.infer<typeof Manifest> {
+/** Read and check a plugin's package.json. */
+function readManifest(dir: string): z.infer<typeof Manifest> {
   try {
     return Manifest.parse(JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")));
   } catch (err) {
@@ -289,7 +285,6 @@ async function add(dir: string, source: PluginRecord["source"]): Promise<Entry> 
     error: null,
     disabled: false,
     disabledByConfig: false,
-    restartRequired: false,
     settingsFields: [],
   };
   const entry: Entry = { record, factory: null, unsubscribe: [] };
@@ -337,34 +332,6 @@ export async function setPluginEnabled(name: string, enabled: boolean): Promise<
   return { ...record };
 }
 
-/** Load a plugin the person just installed (or note that a restart is needed to run its new code). */
-export async function addInstalled(dir: string): Promise<PluginRecord> {
-  const name = readManifest(dir).name;
-  const existing = entries.find((e) => e.record.name === name);
-  if (existing) {
-    if (existing.record.source !== "installed") throw new ConflictError(`A ${existing.record.source} plugin named ${name} already exists.`);
-    // Same plugin, new version: the running process keeps the old module until it restarts.
-    const manifest = readManifest(dir);
-    const changed = manifest.version !== existing.record.version;
-    existing.record.version = manifest.version;
-    existing.record.settingsFields = manifest.yaypost.settings;
-    existing.record.restartRequired ||= changed && Boolean(existing.factory);
-    return { ...existing.record };
-  }
-  return { ...(await add(dir, "installed")).record };
-}
-
-/** Forget an installed plugin (after its package was removed). */
-export function removeInstalled(name: string): void {
-  const entry = find(name);
-  if (entry.record.source !== "installed") throw new ConflictError(`${name} is ${entry.record.source}; only plugins installed from the UI can be uninstalled here.`);
-  deactivate(entry);
-  entries.splice(entries.indexOf(entry), 1);
-  kv.set(settingsKey(name), null);
-  const off = uiDisabled();
-  if (off.delete(name)) kv.set(UI_DISABLED, [...off]);
-}
-
 /** Approval chats added or removed at runtime (the notification hub starts and stops them). */
 export function onChannelsChange(fn: (change: { added: ChannelDefinition[]; removed: ChannelDefinition[] }) => void): () => void {
   channelListeners.add(fn);
@@ -396,7 +363,6 @@ export async function loadPlugins(): Promise<void> {
           error: `can't find it: ${(err as Error).message}`,
           disabled: false,
           disabledByConfig: false,
-          restartRequired: false,
           settingsFields: [],
         },
         factory: null,
@@ -407,7 +373,6 @@ export async function loadPlugins(): Promise<void> {
     }
     await add(dir, "config");
   }
-  for (const dir of installedPackageDirs()) await add(dir, "installed");
   // Accounts whose platform no plugin provides can't publish; say so where the person looks.
   for (const row of db.prepare("SELECT id, platform FROM accounts WHERE removed_at IS NULL").all() as Pick<Account, "id" | "platform">[]) {
     if (!platforms.has(row.platform)) {
