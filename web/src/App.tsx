@@ -140,7 +140,7 @@ function Shell({ health }: { health: Health }) {
       { id: "go-published", group: "Go", title: "Published posts", icon: CircleCheck, run: () => navigate("/queue?tab=published") },
       { id: "settings", group: "Settings", title: "Settings", icon: Settings2, keywords: "preferences timezone slots approval", run: () => navigate("/settings") },
       { id: "accounts", group: "Settings", title: "Accounts", icon: Users, keywords: "connect bluesky mastodon linkedin threads x", run: () => navigate("/settings/accounts") },
-      { id: "memory", group: "Settings", title: "Personalization & memory", icon: Sparkles, keywords: "feedback model operator voice ai", run: () => navigate("/settings/personalization") },
+      { id: "memory", group: "Settings", title: "Personalization & memory", icon: Sparkles, keywords: "feedback voice", run: () => navigate("/settings/personalization") },
       { id: "connect", group: "Agents", title: "Connect agents (MCP, API, CLI)", icon: Plug, keywords: "mcp claude grok webhooks", run: () => navigate("/settings/agents") },
       { id: "plugins", group: "Agents", title: "Plugins (platforms & approval chats)", icon: Puzzle, keywords: "install extensions npm", run: () => navigate("/settings/plugins") },
       { id: "docs", group: "Agents", title: "Open API reference", icon: BookOpen, keywords: "openapi rest docs", run: () => open("/docs", "_blank") },

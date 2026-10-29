@@ -15,7 +15,7 @@ import { itemsFor, listPlatforms, platform as platformDef, platformInfo, platfor
 import { pausePublishing, pauseState } from "./control.ts";
 import { currentActor } from "./actor.ts";
 import { listFeedback } from "./audit.ts";
-import { threadGuide } from "./ai/guide.ts";
+import { threadGuide } from "./guide.ts";
 import { buildQueue, getConfig, nextFreeSlots, parseWhen } from "./config.ts";
 import { publishedWithMetrics, refreshMetrics } from "./metrics.ts";
 import { ROOT } from "./env.ts";
@@ -47,7 +47,7 @@ const EDITABLE = ["draft", "scheduled", "due", "failed"];
 const MAX_IMAGES_PER_POST = 4;
 
 /** Server instructions for agents; the approval part follows the current config. */
-export function instructions(): string {
+function instructions(): string {
   const { approval } = getConfig();
   const gated = approval.require === "agents";
   return `Yaypost is this person's publishing layer for you, the agent: you draft, check, schedule and publish posts and threads on X, Bluesky, Mastodon, Threads, LinkedIn, Telegram and Discord through it, read how they perform, and continue threads. You do the work; the person decides. You never see their credentials.
@@ -282,9 +282,6 @@ function imageTarget(postId: string, postIndex: number): Post {
 interface ToolEntry {
   name: string;
   description: string;
-  input: z.ZodRawShape;
-  annotations: ToolAnnotations;
-  run: (args: Record<string, unknown>) => CallToolResult | Promise<CallToolResult>;
   register: (s: McpServer) => void;
 }
 
@@ -298,9 +295,6 @@ function tool<S extends z.ZodRawShape>(
   tools.push({
     name,
     description: config.description,
-    input: config.input,
-    annotations: config.annotations,
-    run: run as ToolEntry["run"],
     register: (s) =>
       s.registerTool(
         name,
@@ -311,27 +305,6 @@ function tool<S extends z.ZodRawShape>(
 }
 
 export const mcpCatalog = () => tools.map(({ name, description }) => ({ name, description }));
-
-/**
- * The same tools for an in-process agent (the operator): name, description, zod input shape, and a runner that
- * validates the arguments the way MCP does. Errors come back as isError results, like over MCP.
- */
-export function agentTools(): { name: string; description: string; input: z.ZodRawShape; run: (args: unknown) => Promise<CallToolResult> }[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input: t.input,
-    run: async (args) => {
-      const parsed = z.object(t.input).safeParse(args ?? {});
-      if (!parsed.success) return { isError: true, content: [{ type: "text", text: `Invalid arguments: ${z.prettifyError(parsed.error)}` }] };
-      try {
-        return await t.run(parsed.data);
-      } catch (err) {
-        return { isError: true, content: [{ type: "text", text: (err as Error).message }] };
-      }
-    },
-  }));
-}
 
 const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
 const id = z.string().min(1).describe("Post id (from list_posts, list_queue or create_post)");

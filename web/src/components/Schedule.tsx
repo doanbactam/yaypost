@@ -1,4 +1,4 @@
-// Weekly schedule controls shared by the posting slots and the operator: pick days, list times of day.
+// Weekly schedule controls for the posting slots: pick days, list times of day.
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 

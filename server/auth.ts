@@ -60,8 +60,9 @@ export const guardRequest: MiddlewareHandler = async (c, next) => {
  */
 function actorFor(c: Context, token: "owner" | "agent" | null): Actor {
   const header = c.req.header("x-yaypost-source");
-  const via = c.req.path.startsWith("/mcp") ? "mcp" : header === "ui" || header === "cli" ? header : "api";
-  if (token === "agent") return { kind: "agent", via };
+  const via = header === "operator" ? "operator" : c.req.path.startsWith("/mcp") ? "mcp" : header === "ui" || header === "cli" ? header : "api";
+  // The operator is always an agent, whatever token it was given: its posts wait for the person like any other.
+  if (token === "agent" || via === "operator") return { kind: "agent", via };
   if (token === "owner" && env.agentToken) return { kind: "owner", via };
   return { kind: via === "ui" ? "owner" : "agent", via };
 }

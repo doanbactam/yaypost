@@ -15,5 +15,5 @@
     "types": ["node", "vite/client"],
     "paths": { "yaypost/plugin": ["./server/plugin-api.ts"] }
   },
-  "include": ["server", "shared", "web/src", "cli", "plugins", "examples", "vite.config.ts"]
+  "include": ["server", "shared", "web/src", "cli", "operator", "plugins", "examples", "vite.config.ts"]
 }

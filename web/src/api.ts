@@ -9,10 +9,6 @@ import type {
   Feedback,
   Health,
   Media,
-  OperatorRun,
-  OperatorSettings,
-  OperatorSourceCheck,
-  OperatorStatus,
   PlatformId,
   Post,
   PostStatus,
@@ -159,17 +155,6 @@ export interface ThreadExport {
   posts: string[];
 }
 export type SlotRule = { days: string; times: string[] } | { days: string; from: string; to: string; everyMinutes: number };
-export interface ModelChoice {
-  provider: "anthropic" | "zai";
-  model: string;
-}
-/** GET /api/operator/models: what the next run uses, the .env default, and the providers that have a key. */
-export interface OperatorModels {
-  current: ModelChoice | null;
-  default: ModelChoice | null;
-  overridden: boolean;
-  providers: { id: ModelChoice["provider"]; name: string; configured: boolean; models: string[] }[];
-}
 export interface AppConfig {
   timezone: string;
   slots: SlotRule[];
@@ -287,7 +272,7 @@ export const api = {
   pushTest: () => call<{ ok: true; message: string }>("POST", "/api/push/test"),
 
 
-  // The person's side: approvals, the kill switch, the audit log, approval chats, the built-in operator.
+  // The person's side: approvals, the kill switch, the audit log, approval chats.
   control: () => call<ControlState>("GET", "/api/control"),
   approvals: () => call<{ posts: Post[] }>("GET", "/api/approvals").then((r) => r.posts),
   approve: (id: string, note?: string) => call<Post>("POST", `/api/posts/${id}/approve`, { body: note ? { note } : {} }),
@@ -303,15 +288,4 @@ export const api = {
   digest: () => call<{ text: string }>("GET", "/api/digest").then((r) => r.text),
   testChannels: (digest?: boolean) =>
     call<{ channels: ChannelStatus[] }>("POST", "/api/channels/test", { body: digest ? { digest } : {} }).then((r) => r.channels),
-  operatorStatus: () => call<OperatorStatus>("GET", "/api/operator/status"),
-  operatorModels: () => call<OperatorModels>("GET", "/api/operator/models"),
-  setOperatorModel: (choice: ModelChoice) => call<OperatorModels>("PUT", "/api/operator/model", { body: choice }),
-  resetOperatorModel: () => call<OperatorModels>("DELETE", "/api/operator/model"),
-  operatorRuns: (limit = 10) => call<{ runs: OperatorRun[] }>("GET", `/api/operator/runs?limit=${limit}`).then((r) => r.runs),
-  runOperator: (task?: string) => call<OperatorRun>("POST", "/api/operator/run", { body: task ? { task } : {} }),
-  stopOperatorRun: (id: string) => call<void>("POST", `/api/operator/runs/${id}/stop`),
-  operatorSettings: () => call<OperatorSettings>("GET", "/api/operator/settings"),
-  saveOperatorSettings: (body: Partial<Omit<OperatorSettings, "briefMissing">>) => call<OperatorSettings>("PUT", "/api/operator/settings", { body }),
-  checkOperatorSources: (sources: string[]) =>
-    call<{ sources: OperatorSourceCheck[] }>("POST", "/api/operator/sources/check", { body: { sources } }).then((r) => r.sources),
 };

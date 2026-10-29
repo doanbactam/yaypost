@@ -127,7 +127,7 @@ auto-plug rule or evergreen recycler, because you do these better with the data:
 - **Evergreen**: find old top performers, rewrite rather than repeat verbatim (platforms penalise duplicates), and
   queue them as new posts with `create_post` (or `POST /api/posts/{id}/duplicate`, then edit).
 - **Running it on a schedule**: a scheduled agent (a Claude Code routine, Claude Duet, cron + the CLI, or Yaypost's
-  own operator) runs the above; the approval gate keeps the person in charge. X metric reads are billed: only with their OK (`paid`).
+  operator in `operator/`) runs the above; the approval gate keeps the person in charge. X metric reads are billed: only with their OK (`paid`).
 
 ## Writing threads that work
 

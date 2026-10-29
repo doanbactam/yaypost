@@ -1,6 +1,6 @@
 // Telegram approval chat via the Bot API with long polling (getUpdates), so it works on localhost with no public URL.
 // Approval cards carry inline buttons (callback_query); "Request changes" asks for the note with a ForceReply prompt,
-// and a plain reply to a card works too. Commands: /pending /status /pause [reason] /resume /run [task].
+// and a plain reply to a card works too. Commands: /pending /status /pause [reason] /resume.
 // Bot API reference: https://core.telegram.org/bots/api (getUpdates, sendMessage, editMessageText, answerCallbackQuery).
 // Settings (Plugins page; .env fallback): TELEGRAM_APPROVAL_BOT_TOKEN (from @BotFather), TELEGRAM_APPROVAL_CHAT_ID (your private chat with the bot, or a
 // group), TELEGRAM_APPROVER_IDS (comma-separated Telegram user ids allowed to decide; default: anyone in that chat).
@@ -29,7 +29,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const CODES: Record<string, ChannelAction> = { a: "approve", r: "reject", c: "changes", p: "pause", u: "resume" };
 const codeOf = (a: ChannelAction) => Object.entries(CODES).find(([, v]) => v === a)![0];
-const COMMANDS: ChannelCommand[] = ["pending", "status", "pause", "resume", "run"];
+const COMMANDS: ChannelCommand[] = ["pending", "status", "pause", "resume"];
 
 const refOf = (m: { chat: { id: number }; message_id: number }) => `${m.chat.id}:${m.message_id}`;
 const who = (u?: TgUser) => `telegram:${u?.username ? `@${u.username}` : (u?.id ?? "unknown")}`;
@@ -179,7 +179,7 @@ export default function telegramApprovals(ts: YaypostAPI): void {
     const command = COMMANDS.find((c) => c === name);
     const text = command
       ? await h.command(who(msg.from), command, m[2]).catch((err: Error) => `⚠ ${err.message}`)
-      : "Commands: /pending (what waits for you), /status (digest now), /pause [reason], /resume, /run [task for the operator].\n" +
+      : "Commands: /pending (what waits for you), /status (digest now), /pause [reason], /resume.\n" +
         "Approval requests arrive here with buttons; to ask for changes, press ✏️ or reply to the request.";
     await reply(msg.chat.id, text);
   }
@@ -220,7 +220,7 @@ export default function telegramApprovals(ts: YaypostAPI): void {
     // The token alone starts the bot, so /start can hand out the chat id before one is set.
     configured: () => Boolean(botToken()),
     status: () => ({ connected, error: !chatId() ? NO_CHAT() : chatIsBot() ? CHAT_IS_BOT() : otherBot ? OTHER_BOT() : (sendError ?? lastError) }),
-    commandsHint: "Commands: /pending /status /pause /resume /run",
+    commandsHint: "Commands: /pending /status /pause /resume",
     start(h) {
       abort?.abort();
       abort = new AbortController();
@@ -233,7 +233,6 @@ export default function telegramApprovals(ts: YaypostAPI): void {
           { command: "status", description: "Digest now" },
           { command: "pause", description: "Stop all publishing" },
           { command: "resume", description: "Restart publishing" },
-          { command: "run", description: "Run the operator now" },
         ],
       }).catch(() => undefined);
       void poll(h, abort.signal);

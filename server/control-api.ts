@@ -10,7 +10,6 @@ import { pausePublishing, pauseState, resumePublishing } from "./control.ts";
 import { createRouter } from "./http.ts";
 import { digestText } from "./notify/card.ts";
 import { channelStatuses, sendDigest, testChannels } from "./notify/hub.ts";
-import { operatorStatus } from "./operator.ts";
 import { decide, listAwaiting, NotFoundError } from "./repo.ts";
 
 const json = <T extends z.ZodType>(schema: T, description: string) => ({ description, content: { "application/json": { schema } } });
@@ -25,34 +24,12 @@ const PauseSchema = z.object({ at: z.iso.datetime(), by: z.string(), reason: z.s
 const ChannelSchema = z
   .object({ id: z.string(), name: z.string(), configured: z.boolean(), connected: z.boolean(), error: z.string().nullable() })
   .openapi("ChannelStatus");
-const RunSchema = z
-  .object({
-    id: z.string(),
-    trigger: z.string(),
-    task: z.string().nullable(),
-    status: z.enum(["running", "done", "failed"]),
-    startedAt: z.iso.datetime(),
-    finishedAt: z.iso.datetime().nullable(),
-    summary: z.string().nullable(),
-    error: z.string().nullable(),
-    toolCalls: z.number().int(),
-  })
-  .openapi("OperatorRun");
 const ControlSchema = z
   .object({
     paused: PauseSchema.nullable(),
     approval: z.object({ require: z.enum(["agents", "never"]), except: z.array(z.string()) }),
     role: z.enum(["owner", "agent"]),
     channels: z.array(ChannelSchema),
-    operator: z.object({
-      configured: z.boolean(),
-      enabled: z.boolean(),
-      reason: z.string().nullable(),
-      model: z.string().nullable(),
-      running: z.boolean(),
-      nextRunAt: z.iso.datetime().nullable(),
-      lastRun: RunSchema.nullable(),
-    }),
     pendingApprovals: z.number().int(),
   })
   .openapi("ControlState");
@@ -67,7 +44,6 @@ export function controlState(): ControlState {
     approval,
     role: currentActor().kind === "agent" ? "agent" : "owner",
     channels: channelStatuses(),
-    operator: operatorStatus(),
     pendingApprovals: listAwaiting().filter((p) => p.approval?.state === "pending").length,
   };
 }
@@ -80,8 +56,8 @@ controlRoutes.openapi(
     path: "/control",
     tags,
     operationId: "getControl",
-    summary: "Approval policy, kill switch, approval chats, operator",
-    description: "What governs publishing right now: whether it is paused, which agent posts need approval, which chats are connected, and the operator's state.",
+    summary: "Approval policy, kill switch, approval chats",
+    description: "What governs publishing right now: whether it is paused, which agent posts need approval and which chats are connected.",
     responses: { 200: json(ControlSchema, "Current state.") },
   }),
   (c) => c.json(controlState(), 200),
@@ -257,7 +233,7 @@ controlRoutes.openapi(
     tags,
     operationId: "getDigest",
     summary: "The daily digest, now",
-    description: "The text the approval chats get each day at digest.time: waiting decisions, what goes out next, results, problems, operator runs.",
+    description: "The text the approval chats get each day at digest.time: waiting decisions, what goes out next, results, problems.",
     responses: { 200: json(z.object({ text: z.string() }), "Digest text.") },
   }),
   async (c) => c.json({ text: await digestText() }, 200),

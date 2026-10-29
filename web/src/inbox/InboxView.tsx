@@ -1,37 +1,28 @@
 // Inbox: the control room. Agents do the work; the person decides here — waiting approvals, the kill switch,
-// the built-in operator, the approval chats (from plugins: Telegram, Discord…) and a readable activity log.
+// the approval chats (from plugins: Telegram, Discord…) and a readable activity log.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   CircleAlert,
-  CircleCheck,
   CirclePause,
   CirclePlay,
-  CircleStop,
   ExternalLink,
   FileText,
-  Globe,
   Image as ImageIcon,
   Inbox,
   LoaderCircle,
   MessageCircle,
   MessageSquareReply,
   PenLine,
-  Play,
-  Plus,
   Send,
   Settings2,
-  Square,
-  X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { AuditEntry, ControlState, Health, OperatorRun, OperatorSettings, Post } from "../../../shared/types.ts";
-import { api, ApiError, type PreviewTarget } from "../api.ts";
+import type { AuditEntry, ControlState, Health, Post } from "../../../shared/types.ts";
+import { api, type PreviewTarget } from "../api.ts";
 import { DecisionBar } from "../components/Approval.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { Popover } from "../components/Popover.tsx";
-import { DayPicker, TimeChips } from "../components/Schedule.tsx";
-import { Switch } from "../components/Switch.tsx";
 import { Tip } from "../components/Tip.tsx";
 import { toast, toastError } from "../components/Toasts.tsx";
 import { useControl } from "../lib/control.ts";
@@ -39,7 +30,7 @@ import { actorName, askerLabel, deciderLabel } from "../lib/actors.ts";
 import { PlatformIcon } from "../lib/platforms.tsx";
 import { openPost } from "../lib/router.ts";
 import { formatWhen, timeAgo } from "../lib/time.ts";
-import { cx, firstLine, providerName } from "../lib/util.ts";
+import { cx, firstLine } from "../lib/util.ts";
 import { PluginSettingsDialog } from "../plugins/PluginSettings.tsx";
 
 const btn = "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50";
@@ -57,7 +48,6 @@ export function InboxView({ health }: { health: Health }) {
       <div className="mx-auto w-full max-w-[720px] space-y-6 px-4 pt-5 pb-24 sm:px-6">
         {/* The systems that feed this inbox, as status you can open; the kill switch sits with them. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <OperatorChip control={control.data} tz={tz} />
           <ChannelChips control={control.data} />
           <div className="flex-1" />
           {control.data && !paused && <PauseButton />}
@@ -364,329 +354,6 @@ function SentBackRow({ post }: { post: Post }) {
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-// ---------- operator ----------
-
-function OperatorChip({ control, tz }: { control: ControlState | undefined; tz: string }) {
-  const qc = useQueryClient();
-  const op = control?.operator;
-  const runs = useQuery({
-    queryKey: ["operator", "runs"],
-    queryFn: () => api.operatorRuns(5),
-    retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 2,
-    // A live run counts its tool calls as it goes.
-    refetchInterval: op?.running ? 3_000 : 60_000,
-  });
-  const [task, setTask] = useState("");
-  const run = useMutation({
-    mutationFn: () => api.runOperator(task.trim() || undefined),
-    onSuccess: () => {
-      setTask("");
-      toast({ title: "Operator started", description: "Anything it queues waits here for you." });
-      void qc.invalidateQueries({ queryKey: ["control"] });
-      void qc.invalidateQueries({ queryKey: ["operator"] });
-    },
-    onError: (e) => toastError("Couldn't start the operator", e),
-  });
-
-  const state = !op
-    ? null
-    : op.running
-      ? { dot: "bg-sky-500 animate-pulse", text: "Running now" }
-      : op.reason
-        ? { dot: "bg-amber-500", text: "Can't run" }
-        : op.enabled
-          ? { dot: "bg-emerald-500", text: op.nextRunAt ? `Next run ${formatWhen(op.nextRunAt, tz)}` : "On schedule" }
-          : { dot: "bg-ink-3", text: "Runs when you ask" };
-
-  const [open, setOpen] = useState(false);
-  const [setup, setSetup] = useState(false);
-  if (!op || !state) return <div className="h-8 w-24 animate-pulse rounded-full bg-subtle" />;
-  // The only blocker the app can fix itself: no brief yet.
-  const noBrief = op.reason?.startsWith("No brief");
-  return (
-    <>
-      <StatusChip dot={state.dot} label={<><Bot size={13} /> Operator</>} open={open} onOpenChange={setOpen}>
-        <div className="flex items-center gap-2">
-          <p className="min-w-0 flex-1 font-medium text-ink">{state.text}</p>
-          {op.model && <span className="truncate text-xs text-ink-3">{op.model}</span>}
-          <Tip content="Brief & schedule">
-            <button
-              onClick={() => (setOpen(false), setSetup(true))}
-              aria-label="Brief & schedule"
-              className="-mr-1 grid size-7 shrink-0 place-items-center rounded-md text-ink-3 hover:bg-subtle hover:text-ink"
-            >
-              <Settings2 size={15} />
-            </button>
-          </Tip>
-        </div>
-        {op.reason &&
-          (noBrief ? (
-            <button
-              onClick={() => (setOpen(false), setSetup(true))}
-              className={cx(btn, "-mt-1 w-full justify-center border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200")}
-            >
-              <PenLine size={13} /> Write its brief
-            </button>
-          ) : (
-            <p className="-mt-2 text-xs leading-relaxed text-amber-800 dark:text-amber-300">{op.reason}</p>
-          ))}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            run.mutate();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
-            disabled={Boolean(op.reason)}
-            maxLength={2000}
-            placeholder="Task for this run (optional)"
-            aria-label="Task for this run (optional)"
-            className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-canvas px-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-line-strong disabled:opacity-50"
-          />
-          <button type="submit" disabled={Boolean(op.reason) || run.isPending} className={cx(btn, "bg-ink text-canvas hover:opacity-90")}>
-            {run.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <Play size={13} />} {op.running ? "Queue run" : "Run now"}
-          </button>
-        </form>
-        <RunList runs={runs.data ?? (op.lastRun ? [op.lastRun] : [])} />
-      </StatusChip>
-      {setup && <OperatorSetup tz={tz} onClose={() => setSetup(false)} />}
-    </>
-  );
-}
-
-export function RunList({ runs }: { runs: OperatorRun[] }) {
-  const qc = useQueryClient();
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const stop = useMutation({
-    mutationFn: (id: string) => api.stopOperatorRun(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["operator"] });
-      void qc.invalidateQueries({ queryKey: ["control"] });
-    },
-    onError: (e) => toastError("Couldn't stop the run", e),
-  });
-  if (!runs.length) return null;
-  return (
-    <ul className="-mx-1 space-y-2 border-t border-line pt-3">
-      {runs.map((r) => {
-        const text = r.error ?? r.summary;
-        const open = expanded === r.id;
-        // Stopping is your choice, not a failure.
-        const stopped = r.error === "Stopped by you.";
-        return (
-          <li key={r.id} className="flex items-start gap-2 px-1 text-xs">
-            {r.status === "running" ? (
-              <LoaderCircle size={13} className="mt-px shrink-0 animate-spin text-sky-600" />
-            ) : stopped ? (
-              <CircleStop size={13} className="mt-px shrink-0 text-ink-3" />
-            ) : r.status === "failed" ? (
-              <CircleAlert size={13} className="mt-px shrink-0 text-red-600 dark:text-red-400" />
-            ) : (
-              <CircleCheck size={13} className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400" />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="text-ink-3 tabular-nums">
-                {timeAgo(r.startedAt)} · {r.trigger}
-                {r.toolCalls > 0 && ` · ${r.toolCalls} tool call${r.toolCalls === 1 ? "" : "s"}`}
-                {r.model && (
-                  <Tip content={r.provider ? providerName(r.provider) : undefined}>
-                    <span className="cursor-help"> · {r.model}</span>
-                  </Tip>
-                )}
-              </p>
-              {r.task && <p className={cx("text-ink-2", !open && "truncate")}>Task: {r.task}</p>}
-              {text && (
-                // The summary is the operator's report: a click shows all of it.
-                <button
-                  onClick={() => setExpanded(open ? null : r.id)}
-                  aria-expanded={open}
-                  className={cx(
-                    "w-full text-left break-words whitespace-pre-line",
-                    r.error && !stopped ? "text-red-700 dark:text-red-300" : "text-ink-2",
-                    !open && (r.error ? "line-clamp-2" : "line-clamp-3"),
-                  )}
-                >
-                  {text}
-                </button>
-              )}
-            </div>
-            {r.status === "running" && (
-              <Tip content="Stop">
-                <button
-                  onClick={() => stop.mutate(r.id)}
-                  disabled={stop.isPending}
-                  aria-label="Stop this run"
-                  className="-mt-0.5 grid size-6 shrink-0 place-items-center rounded-md text-ink-3 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/40"
-                >
-                  <Square size={11} fill="currentColor" />
-                </button>
-              </Tip>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/** When the operator runs on its own, and the brief it works from. */
-function OperatorSetup({ tz, onClose }: { tz: string; onClose: () => void }) {
-  const qc = useQueryClient();
-  const { data: saved } = useQuery({ queryKey: ["operator", "settings"], queryFn: api.operatorSettings });
-  const [draft, setDraft] = useState<OperatorSettings | null>(null);
-  if (saved && !draft) setDraft(saved);
-  const save = useMutation({
-    mutationFn: (d: OperatorSettings) =>
-      api.saveOperatorSettings({
-        enabled: d.enabled,
-        days: d.days,
-        runAt: d.runAt,
-        ...(d.sources.join() !== saved?.sources.join() ? { sources: d.sources } : {}),
-        // Only write the brief when it changed, or when there is no brief file yet.
-        ...(d.brief !== saved?.brief || saved?.briefMissing ? { brief: d.brief } : {}),
-      }),
-    onSuccess: (next) => {
-      qc.setQueryData(["operator", "settings"], next);
-      void qc.invalidateQueries({ queryKey: ["control"] });
-      void qc.invalidateQueries({ queryKey: ["operator-status"] });
-      toast({ title: next.enabled ? "Operator schedule saved" : "Operator saved", tone: "success" });
-      onClose();
-    },
-    onError: (e) => toastError("Couldn't save", e),
-  });
-
-  if (!draft || !saved) return null;
-  const set = (patch: Partial<OperatorSettings>) => setDraft({ ...draft, ...patch });
-  const changed = JSON.stringify(draft) !== JSON.stringify(saved) || saved.briefMissing;
-  const invalid = draft.enabled && (!draft.days.length || !draft.runAt.length);
-
-  return (
-    <Dialog title="Operator brief and schedule" onClose={onClose} className="w-[min(40rem,calc(100vw-2rem))]">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          save.mutate(draft);
-        }}
-        className="space-y-4"
-      >
-        <div className="flex items-center gap-3">
-          <Switch id="op-enabled" checked={draft.enabled} onChange={(enabled) => set({ enabled })} />
-          <label htmlFor="op-enabled" className="text-sm font-medium">
-            Run on its own
-          </label>
-          <span className="ml-auto text-xs text-ink-3">{tz.replace(/_/g, " ")}</span>
-        </div>
-
-        {/* The schedule only matters when it runs on its own; "Run now" works either way. */}
-        <fieldset disabled={!draft.enabled} className="space-y-3 transition-opacity disabled:opacity-40">
-          <legend className="sr-only">Schedule</legend>
-          <DayPicker days={draft.days} onChange={(days) => set({ days })} />
-          <TimeChips times={draft.runAt} onChange={(runAt) => set({ runAt })} />
-        </fieldset>
-
-        <div>
-          <textarea
-            value={draft.brief}
-            onChange={(e) => set({ brief: e.target.value })}
-            aria-label="Brief"
-            rows={16}
-            maxLength={20_000}
-            spellCheck
-            className="block w-full resize-y rounded-xl border border-line bg-canvas p-3 font-mono text-[13px] leading-relaxed text-ink focus:border-line-strong"
-          />
-          {saved.briefMissing && <p className="mt-1.5 text-xs text-ink-3">Starting from the example. Make it yours, then save.</p>}
-        </div>
-
-        <Sources urls={draft.sources} onChange={(sources) => set({ sources })} />
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={cx(btn, "text-ink-2 hover:bg-subtle hover:text-ink")}>
-            Cancel
-          </button>
-          <button type="submit" disabled={!changed || invalid || !draft.brief.trim() || save.isPending} className={cx(btn, "bg-ink px-3 text-canvas hover:opacity-90")}>
-            {save.isPending && <LoaderCircle size={13} className="animate-spin" />} Save
-          </button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-/** Remote MCP servers whose read-only tools (web search, page reading…) the operator gets. */
-function Sources({ urls, onChange }: { urls: string[]; onChange: (urls: string[]) => void }) {
-  const [url, setUrl] = useState("");
-  const check = useMutation({ mutationFn: (list: string[]) => api.checkOperatorSources(list), onError: (e) => toastError("Couldn't check", e) });
-  const result = (u: string) => check.data?.find((r) => r.url === u);
-  const next = url.trim();
-  const add = () => {
-    if (!/^https?:\/\/[^\s/]+/.test(next) || urls.includes(next)) return;
-    onChange([...urls, next]);
-    setUrl("");
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Web tools (MCP servers)">
-        <Tip content="Web tools: MCP servers the operator can search and read the web with">
-          <Globe size={15} className="mr-0.5 text-ink-3" aria-label="Web tools" />
-        </Tip>
-        {urls.map((u) => {
-          const r = result(u);
-          return (
-            <Tip key={u} content={u}>
-              <span className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-canvas pr-1 pl-3 text-sm">
-                {r && <span className={cx("size-2 rounded-full", r.error ? "bg-red-500" : "bg-emerald-500")} />}
-                {new URL(u).hostname}
-                <button
-                  type="button"
-                  onClick={() => onChange(urls.filter((x) => x !== u))}
-                  aria-label={`Remove ${u}`}
-                  className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-subtle hover:text-ink"
-                >
-                  <X size={12} />
-                </button>
-              </span>
-            </Tip>
-          );
-        })}
-        <span className="flex h-8 items-center rounded-full border border-dashed border-line-strong pr-1 pl-3">
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-            placeholder="https://…/mcp"
-            aria-label="MCP server URL to add"
-            className="w-36 bg-transparent text-sm outline-none placeholder:text-ink-3"
-          />
-          <button type="button" onClick={add} aria-label="Add MCP server" className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-subtle hover:text-ink">
-            <Plus size={13} />
-          </button>
-        </span>
-        {urls.length > 0 && (
-          <button type="button" onClick={() => check.mutate(urls)} disabled={check.isPending} className={cx(btn, "text-ink-2 hover:bg-subtle hover:text-ink")}>
-            {check.isPending && <LoaderCircle size={13} className="animate-spin" />} Check
-          </button>
-        )}
-      </div>
-      {check.data?.some((r) => urls.includes(r.url)) && (
-        <ul className="space-y-0.5 pl-6 text-xs text-ink-3">
-          {check.data
-            .filter((r) => urls.includes(r.url))
-            .map((r) => (
-              <li key={r.url} className={cx(r.error && "text-red-600 dark:text-red-400")}>
-                <span className="font-medium">{r.name}</span> {r.error ?? (r.tools.length ? r.tools.join(", ") : "no read-only tools")}
-              </li>
-            ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 // ---------- approval chats ----------
 

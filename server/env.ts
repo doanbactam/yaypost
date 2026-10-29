@@ -31,14 +31,6 @@ export const env = {
   /** Extra hostnames accepted in the Host header when no AUTH_TOKEN is set (comma-separated). */
   allowedHosts: (str("ALLOWED_HOSTS") ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
 
-  ai: {
-    /** "anthropic" or "zai"; when unset, whichever key is present (Anthropic first). */
-    provider: str("AI_PROVIDER")?.toLowerCase(),
-    model: str("AI_MODEL"),
-    anthropicKey: str("ANTHROPIC_API_KEY"),
-    zaiKey: str("ZAI_API_KEY"),
-  },
-
   vapidSubject: str("VAPID_SUBJECT") ?? "mailto:yaypost@localhost",
 };
 

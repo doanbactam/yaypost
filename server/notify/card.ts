@@ -6,7 +6,6 @@ import { formatLocal, localDateKey } from "../config.ts";
 import { pauseState } from "../control.ts";
 import { publicUrl } from "../env.ts";
 import { refreshMetrics } from "../metrics.ts";
-import { operatorStatus, listRuns } from "../operator.ts";
 import { platformName } from "../plugins.ts";
 import { listAwaiting, listPosts } from "../repo.ts";
 
@@ -120,12 +119,5 @@ export async function digestText(): Promise<string> {
   }
   const broken = listAccounts().filter((a) => a.lastError);
   if (broken.length) lines.push("", ...broken.map((a) => `⚠ ${a.label}: ${firstLine(a.lastError ?? "", 160)}`));
-  const op = operatorStatus();
-  if (op.enabled) {
-    const runs = listRuns(20).filter((r) => r.startedAt >= since);
-    lines.push("", `🤖 Operator: ${runs.length} run${runs.length === 1 ? "" : "s"} in 24 h${op.nextRunAt ? `, next ${formatLocal(op.nextRunAt)}` : ""}`);
-    const last = runs.find((r) => r.summary);
-    if (last?.summary) lines.push(`Last: ${firstLine(last.summary, 300)}`);
-  }
   return lines.join("\n");
 }

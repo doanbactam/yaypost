@@ -63,8 +63,6 @@ Approvals (agents queue, the person decides)
   audit [--limit n]           Who did what, newest first
   feedback [--limit n]        What the person said when sending back, rejecting or approving: follow it in new drafts
   digest                      The daily digest, now
-  operator                    Built-in operator status and recent runs
-  operator run [task]         Start an operator run now (owner)
 
 Other
   health                      Server status: version, paused, timezone
@@ -709,19 +707,6 @@ const commands = {
 
   async digest() {
     emit(await api("GET", "/api/digest"), ({ text }) => console.log(text));
-  },
-
-  async operator([sub, ...task]) {
-    if (sub === "run") {
-      const run = await api("POST", "/api/operator/run", { task: task.join(" ") || undefined });
-      return emit(run, () => console.log(`Operator run ${short(run.id)} started; its summary goes to your approval chats and \`yaypost operator\`.`));
-    }
-    if (sub) throw new UsageError("Usage: yaypost operator [run [task]]");
-    const [status, { runs }] = await Promise.all([api("GET", "/api/operator/status"), api("GET", "/api/operator/runs?limit=5")]);
-    emit({ status, runs }, () => {
-      console.log(status.enabled ? `Operator on (${status.model})${status.nextRunAt ? `, next run ${when(status.nextRunAt)}` : ""}${status.running ? " · running now" : ""}` : `Operator off${status.reason ? `: ${status.reason}` : ""}`);
-      for (const r of runs) console.log(`\n${when(r.startedAt)} · ${r.trigger} · ${r.status}${r.task ? `\n  task: ${r.task}` : ""}\n  ${r.summary ?? r.error ?? ""}`);
-    });
   },
 
   async health() {

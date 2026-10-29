@@ -247,59 +247,12 @@ export interface ChannelStatus {
   error: string | null;
 }
 
-export interface OperatorRun {
-  id: string;
-  trigger: string;
-  task: string | null;
-  status: "running" | "done" | "failed";
-  startedAt: string;
-  finishedAt: string | null;
-  summary: string | null;
-  error: string | null;
-  toolCalls: number;
-  /** "anthropic" or "zai"; null for runs from before this was recorded. */
-  provider: string | null;
-  model: string | null;
-}
-
-export interface OperatorStatus {
-  configured: boolean;
-  enabled: boolean;
-  reason: string | null;
-  model: string | null;
-  running: boolean;
-  nextRunAt: string | null;
-  lastRun: OperatorRun | null;
-}
-
-/** What the person sets up for the operator in the app: its schedule (yaypost.config.json) and its brief (operator.md). */
-export interface OperatorSettings {
-  enabled: boolean;
-  /** 0 = Sunday … 6 = Saturday. */
-  days: number[];
-  runAt: string[];
-  /** The brief, or the example to start from when there is none yet (briefMissing). */
-  brief: string;
-  briefMissing: boolean;
-  /** URLs of the remote MCP servers (web search…) the operator uses; headers and tool lists stay in yaypost.config.json. */
-  sources: string[];
-}
-
-/** A remote MCP server checked from the operator settings: the tools the operator would get from it. */
-export interface OperatorSourceCheck {
-  url: string;
-  name: string;
-  tools: string[];
-  error: string | null;
-}
-
 export interface ControlState {
   paused: PauseState | null;
   approval: { require: "agents" | "never"; except: PlatformId[] };
   /** What the caller is: the person (owner) or an agent. Only the owner can approve, resume, connect accounts. */
   role: "owner" | "agent";
   channels: ChannelStatus[];
-  operator: OperatorStatus;
   pendingApprovals: number;
 }
 
@@ -307,7 +260,6 @@ export interface Health {
   ok: true;
   version: string;
   timezone: string;
-  ai: { configured: boolean; provider: string | null; model: string | null };
   paused: boolean;
   auth: { required: boolean };
 }

@@ -6,7 +6,6 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import { apiRoutes, mediaFileRoutes } from "./api.ts";
 import { controlRoutes } from "./control-api.ts";
-import { operatorRoutes } from "./operator.ts";
 import { pluginRoutes } from "./plugins-api.ts";
 import { guardRequest, requireAuth } from "./auth.ts";
 import { env, ROOT, VERSION } from "./env.ts";
@@ -31,7 +30,6 @@ app.use("/llms-full.txt", requireAuth);
 app.route("/api", apiRoutes);
 app.route("/api", controlRoutes);
 app.route("/api", pluginRoutes);
-app.route("/api/operator", operatorRoutes);
 app.route("/api/push", pushRoutes);
 app.route("/media", mediaFileRoutes);
 app.route("/mcp", mcpRoutes);
@@ -59,7 +57,6 @@ app.doc31("/openapi.json", (c) => ({
     { name: "Accounts", description: "Connected accounts per platform. Credentials are verified on connect, stored encrypted and never returned." },
     { name: "Metrics", description: "Engagement data per destination, for agents to analyse. No built-in dashboards or rules: the agent decides." },
     { name: "Approvals", description: "The person's side: approve or send back what agents queue, pause everything, audit log, digest, approval chats." },
-    { name: "Operator", description: "The built-in operator: Claude running unattended on a schedule with these tools, following operator.md." },
     { name: "Plugins", description: "Platforms and approval chats are plugins: list, browse npm, install, update, switch on/off (owner only)." },
     { name: "Media", description: "Images attached to posts (PNG, JPEG, WebP, GIF; ≤5 MB; ≤4 per post)." },
     { name: "Events", description: "Server-Sent Events stream of every state change." },

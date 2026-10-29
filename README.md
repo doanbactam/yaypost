@@ -2,7 +2,7 @@
 
 **Your AI agent does the social media work. You just say yay.**
 
-An agent (Claude Code, Cursor, a scheduled routine, or Yaypost's built-in operator) writes, checks, schedules and
+An agent (Claude Code, Cursor, a scheduled routine, or the bundled operator) writes, checks, schedules and
 publishes posts to **X, Bluesky, Mastodon, Threads, LinkedIn, Telegram and Discord**, then reads the numbers and writes
 the next one. Every post it wants to publish lands in your **Telegram or Discord** first. You tap **Approve**, reply
 "shorter", or tap **Reject**. Nothing goes out without your yay.
@@ -54,9 +54,11 @@ Then:
 | **llms.txt** | `/llms.txt`, `/llms-full.txt` |
 | **Webhooks** | HMAC-signed (`X-Yaypost-Signature`), set up in Settings |
 
-No agent of your own? Turn on the **operator** (*Inbox → Operator*): Claude runs on a schedule from your brief, using
-the same tools and the same approval gate. Needs `ANTHROPIC_API_KEY` (or `ZAI_API_KEY`) in `.env`. It researches with
-the read-only tools of remote MCP servers you list (web search through Parallel by default; add Firecrawl or any other).
+No agent of your own? Use the **operator** in `operator/`: Claude working from your brief (copy `operator.example.md`
+to `operator.md`), connected over MCP like any other agent, so it goes through the same approval gate. It is not part
+of the server: `pnpm operator` does one run (schedule it with cron), `pnpm operator --watch` revises its posts when you
+send them back. Needs `ANTHROPIC_API_KEY` (or `ZAI_API_KEY`) in `.env`. It researches with the read-only tools of
+remote MCP servers (`OPERATOR_SOURCES`; web search through Parallel by default).
 
 ## Running it for real
 

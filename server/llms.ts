@@ -2,11 +2,10 @@
 // from the live OpenAPI document) so any agent can learn to drive Yaypost from one URL.
 import { Hono } from "hono";
 import { listAccounts } from "./accounts.ts";
-import { threadGuide } from "./ai/guide.ts";
+import { threadGuide } from "./guide.ts";
 import { getConfig } from "./config.ts";
 import { env } from "./env.ts";
 import { mcpCatalog } from "./mcp.ts";
-import { operatorStatus } from "./operator.ts";
 import { platformName } from "./plugins.ts";
 
 export const llmsRoutes = new Hono();
@@ -44,7 +43,7 @@ Destinations: a post's \`targets\` are connected accounts (\`GET /api/accounts\`
 - [MCP endpoint](${base}/mcp): Streamable HTTP, stateless. Claude Code: \`claude mcp add --transport http yaypost ${base}/mcp${env.authToken ? ' --header "Authorization: Bearer <AUTH_TOKEN>"' : ""}\`${env.authToken ? `. Clients that can't send headers (claude.ai / ChatGPT connectors) use ${base}/mcp?token=<AUTH_TOKEN> over HTTPS` : ""}
 - [CLI](${base}/llms-full.txt): zero-dependency Node script \`cli/yaypost.mjs\` (\`yaypost new "text" --at next\`, \`yaypost queue\`, \`--json\` everywhere); set YAYPOST_URL and YAYPOST_TOKEN
 - [Health](${base}/api/health): version, whether publishing is paused, timezone
-- [Approvals](${base}/api/approvals): what waits for the person or was sent back with changes; [control](${base}/api/control): approval policy, pause, chats, operator
+- [Approvals](${base}/api/approvals): what waits for the person or was sent back with changes; [control](${base}/api/control): approval policy, pause, chats
 - [Accounts](${base}/api/accounts) and [platforms](${base}/api/platforms): where posts can go, each platform's limits, counting rule (as data) and cost
 - [Plugins](${base}/api/plugins): every platform and approval chat is a plugin; this lists what is loaded (and why a plugin failed)
 
@@ -61,7 +60,6 @@ llmsRoutes.get("/llms-full.txt", async (c) => {
   const { app, VERSION } = await import("./app.ts"); // lazy: app.ts imports this module
   const base = origin(c.req.url);
   const config = getConfig();
-  const op = operatorStatus();
   const accounts = listAccounts();
   const doc = app.getOpenAPI31Document({ openapi: "3.1.0", info: { title: "Yaypost API", version: VERSION } });
 
@@ -87,7 +85,6 @@ llmsRoutes.get("/llms-full.txt", async (c) => {
       : "none yet (nothing can be scheduled or published until the person connects accounts in the UI)"
   }
 - ${approvalLine()}
-- Built-in operator: ${op.enabled ? `on (${op.model ?? "Claude"}), next run ${op.nextRunAt ?? "not scheduled"}` : `off${op.reason ? ` (${op.reason})` : ""}`}
 - Timezone: ${config.timezone}
 - Auth: ${authLine()}
 
@@ -157,7 +154,7 @@ Every command accepts \`--json\` for machine-readable output. Exit codes: 0 ok, 
 - \`publish <id>\`, \`retry <id>\`, \`copy <id> [--clipboard]\`, \`posted <id> [--url u]\`
 - \`accounts\` (\`accounts check <ref>\`), \`platforms\`
 - \`count [text|--file f] [--platform p] [--max n]\` — local count per post the way that platform counts (default X)
-- \`reviews\` (waiting on the person / sent back), \`pause [reason]\`, \`resume\`, \`approve|reject <id> [--note n]\`, \`changes <id> <note>\` (deciding needs the owner token), \`audit\`, \`feedback\` (what the person said about past posts), \`digest\`, \`operator [run [task]]\`
+- \`reviews\` (waiting on the person / sent back), \`pause [reason]\`, \`resume\`, \`approve|reject <id> [--note n]\`, \`changes <id> <note>\` (deciding needs the owner token), \`audit\`, \`feedback\` (what the person said about past posts), \`digest\`
 - \`health\`, \`help\`
 Account refs (\`--to\`, \`--version\`): id or id prefix, label, handle, or platform name when only one account of it is connected.
 Ids can be shortened to any unique prefix.

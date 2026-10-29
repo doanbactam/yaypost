@@ -179,6 +179,11 @@ const MIGRATIONS = [
   `
   ALTER TABLE posts DROP COLUMN x_post_ids;
   `,
+  // The operator moved out of the server (operator/): it is an agent like any other, with no state here.
+  `
+  DROP TABLE operator_runs;
+  DELETE FROM kv WHERE key = 'ai.model';
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

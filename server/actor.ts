@@ -1,4 +1,4 @@
-// Who is acting in the current request or job. Set once per request (auth middleware) or job (operator, chat
+// Who is acting in the current request or job. Set once per request (auth middleware) or job (chat
 // approvals); read wherever a decision depends on it (approval gate, audit log) without threading it through calls.
 import { AsyncLocalStorage } from "node:async_hooks";
 

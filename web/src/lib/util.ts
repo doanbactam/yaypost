@@ -61,8 +61,3 @@ export function firstLine(text: string, max = 80): string {
 export function cx(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
 }
-
-/** The AI provider's display name ("zai" → "Z.ai"). */
-export function providerName(id: string): string {
-  return id === "zai" ? "Z.ai" : id === "anthropic" ? "Anthropic" : id;
-}

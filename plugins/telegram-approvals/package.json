@@ -1,7 +1,7 @@
 {
   "name": "telegram-approvals",
   "version": "1.0.0",
-  "description": "Approval chat on Telegram: approval requests with inline buttons, replies as change requests, and /pending /status /pause /resume /run commands, over Bot API long polling (no public URL needed).",
+  "description": "Approval chat on Telegram: approval requests with inline buttons, replies as change requests, and /pending /status /pause /resume commands, over Bot API long polling (no public URL needed).",
   "private": true,
   "keywords": [
     "yaypost-plugin"

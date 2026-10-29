@@ -1,4 +1,4 @@
-// The control state (kill switch, approvals waiting, chats, operator), shared by the sidebar, Inbox and composer.
+// The control state (kill switch, approvals waiting, chats), shared by the sidebar, Inbox and composer.
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api.ts";
 

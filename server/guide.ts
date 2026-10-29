@@ -1,7 +1,7 @@
 // Writing guide for agents, served as the MCP resource yaypost://guide and inside /llms-full.txt.
-import type { PlatformDefinition } from "../plugin-api.ts";
-import { listPlatforms } from "../plugins.ts";
-import { getConfig } from "../config.ts";
+import type { PlatformDefinition } from "./plugin-api.ts";
+import { listPlatforms } from "./plugins.ts";
+import { getConfig } from "./config.ts";
 
 /** The platform's counting rule in words. */
 function counting(p: PlatformDefinition): string {

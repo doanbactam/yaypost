@@ -1,5 +1,5 @@
 // The server's timezone as a button: opens a searchable list (city, local time now, GMT offset), the device's own
-// zone first. Saving moves posting slots, the digest and the operator schedule with it; scheduled posts keep their moment.
+// zone first. Saving moves posting slots and the digest with it; scheduled posts keep their moment.
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Laptop } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";

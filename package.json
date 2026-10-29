@@ -16,7 +16,8 @@
     "build": "vite build",
     "start": "NODE_ENV=production tsx --disable-warning=ExperimentalWarning server/index.ts",
     "typecheck": "tsc --noEmit",
-    "cli": "node cli/yaypost.mjs"
+    "cli": "node cli/yaypost.mjs",
+    "operator": "tsx --disable-warning=ExperimentalWarning operator/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

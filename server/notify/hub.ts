@@ -7,7 +7,6 @@ import { getConfig, localDateKey } from "../config.ts";
 import { pausePublishing, pauseState, resumePublishing } from "../control.ts";
 import { db, kv } from "../db.ts";
 import { bus } from "../events.ts";
-import { requestRun } from "../operator.ts";
 import { decide, getPost, listAwaiting } from "../repo.ts";
 import { approvalCard, clip, digestText, outcomeLine, pendingText, postLink, postName } from "./card.ts";
 import type { ChannelButton as Button, ChannelCommand as Command, ChannelHandlers } from "../plugin-api.ts";
@@ -132,10 +131,6 @@ const handlers: ChannelHandlers = {
           if (!pauseState()) return "Publishing isn't paused.";
           resumePublishing();
           return "▶️ Resumed.";
-        case "run": {
-          const run = await requestRun(`chat:${who}`, arg?.trim() || undefined);
-          return `🤖 Operator run started (${run.id.slice(0, 8)}). Its summary will come here.`;
-        }
       }
     }),
   postForRef: (ref) => (db.prepare("SELECT post_id FROM approval_messages WHERE ref = ?").get(ref) as { post_id: string } | undefined)?.post_id ?? null,

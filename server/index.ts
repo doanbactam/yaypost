@@ -7,7 +7,6 @@ import { sendToAll, startPush } from "./push.ts";
 import { startAccountChecks } from "./accounts.ts";
 import { startAudit } from "./audit.ts";
 import { alert, channelStatuses, startNotify } from "./notify/hub.ts";
-import { startOperator } from "./operator.ts";
 import { listPlatforms, listPlugins, loadPlugins } from "./plugins.ts";
 import { recoverInterrupted } from "./repo.ts";
 import { startScheduler } from "./scheduler.ts";
@@ -29,7 +28,6 @@ startAccountChecks((a) => {
   alert(`⚠ ${a.label} needs attention: ${a.lastError ?? ""}\nPosts to it will fail until you reconnect it in Yaypost.`);
 });
 const stopScheduler = startScheduler();
-const stopOperator = startOperator();
 
 const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, () => {
   console.log(`Yaypost ${VERSION} → ${publicUrl()}`);
@@ -49,7 +47,6 @@ const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (
 
 /** Stop taking work, let a publish in progress finish (up to 30 s), then exit (75 when a restart was asked for). */
 async function shutdown() {
-  stopOperator();
   stopNotify();
   const code = typeof process.exitCode === "number" ? process.exitCode : 0;
   setTimeout(() => process.exit(code), 30_000).unref();

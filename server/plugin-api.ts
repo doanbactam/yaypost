@@ -123,7 +123,7 @@ export interface PlatformErrorConstructor {
 // ---------- approval channels ----------
 
 export type ChannelAction = "approve" | "reject" | "changes" | "pause" | "resume";
-export type ChannelCommand = "pending" | "status" | "pause" | "resume" | "run";
+export type ChannelCommand = "pending" | "status" | "pause" | "resume";
 
 export interface ChannelButton {
   label: string;
@@ -143,7 +143,7 @@ export interface ChannelHandlers {
    * decide. `who` names them for the audit log, e.g. "telegram:@alice". Returns a short confirmation to show them.
    */
   act(who: string, action: ChannelAction, postId: string | null, note?: string): Promise<string>;
-  /** A text command (/pending, /status, /pause [reason], /resume, /run [task]). Returns the reply text. */
+  /** A text command (/pending, /status, /pause [reason], /resume). Returns the reply text. */
   command(who: string, command: ChannelCommand, arg?: string): Promise<string>;
   /** The post an approval message (by the ref send() returned) is about, for replies to it. */
   postForRef(ref: string): string | null;

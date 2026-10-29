@@ -7,7 +7,6 @@ import { countWith } from "../shared/counting.ts";
 import { threadToText } from "../shared/thread.ts";
 import { APP_EVENT_TYPES, APPROVAL_STATES, POST_STATUSES, type Health, type PlatformId, type Post, type PostSource, type PostStatus } from "../shared/types.ts";
 import { connectAccount, deleteAccount, getAccount, listAccounts, recheckAccount, updateAccount } from "./accounts.ts";
-import { aiStatus } from "./ai/provider.ts";
 import { buildQueue, configError, getConfig, nextFreeSlots, parseInstant, parseWhen, writeConfig } from "./config.ts";
 import { requireOwner } from "./actor.ts";
 import type { ThreadMode } from "./plugin-api.ts";
@@ -263,7 +262,6 @@ const HealthSchema = z
     ok: z.literal(true),
     version: z.string(),
     timezone: z.string(),
-    ai: z.object({ configured: z.boolean(), provider: z.string().nullable(), model: z.string().nullable() }),
     paused: z.boolean().openapi({ description: "true while publishing is paused (kill switch); nothing goes out." }),
     auth: z.object({ required: z.boolean() }),
   })
@@ -1142,7 +1140,7 @@ apiRoutes.openapi(
     operationId: "updateTimezone",
     summary: "Change the timezone",
     description:
-      "Writes `timezone` (an IANA name) in yaypost.config.json. Posting slots, the digest and the operator schedule are wall-clock times, " +
+      "Writes `timezone` (an IANA name) in yaypost.config.json. Posting slots and the digest are wall-clock times, " +
       "so they follow the new timezone; posts already scheduled keep their exact moment. Only the person (owner).",
     request: { body: { content: { "application/json": { schema: z.object({ timezone: z.string().min(1) }) } } } },
     responses: {
@@ -1167,7 +1165,7 @@ apiRoutes.openapi(
     operationId: "getHealth",
     summary: "Server status and capabilities",
     description:
-      "Call first: tells you the timezone, whether publishing is paused and whether AI routes work. Where posts can go: GET /accounts.",
+      "Call first: tells you the timezone and whether publishing is paused. Where posts can go: GET /accounts.",
     responses: { 200: json(HealthSchema, "OK.") },
   }),
   (c) => {
@@ -1175,7 +1173,6 @@ apiRoutes.openapi(
       ok: true,
       version: VERSION,
       timezone: getConfig().timezone,
-      ai: aiStatus(),
       paused: Boolean(pauseState()),
       auth: { required: Boolean(env.authToken) },
     };

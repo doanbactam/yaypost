@@ -17,15 +17,6 @@ const SlotRule = z.union([
     .refine((r) => r.from <= r.to, '"from" must not be later than "to" (ranges can\'t cross midnight; split them into two rules)'),
 ]);
 
-const McpServer = z.object({
-  url: z.url({ protocol: /^https?$/ }),
-  headers: z.record(z.string(), z.string()).default({}),
-  tools: z.array(z.string()).optional(),
-});
-export type McpServerConfig = z.infer<typeof McpServer>;
-/** Parallel's free web search and fetch; PARALLEL_API_KEY in .env only raises its limits. */
-const DEFAULT_MCP_SERVERS: McpServerConfig[] = [{ url: "https://mcp.parallel.ai/mcp", headers: { Authorization: "Bearer ${PARALLEL_API_KEY}" } }];
-
 const ConfigSchema = z.object({
   timezone: z.string().default(Intl.DateTimeFormat().resolvedOptions().timeZone),
   slots: z.array(SlotRule).default([{ days: "mon-fri", times: ["09:00", "12:30", "16:00"] }]),
@@ -35,7 +26,7 @@ const ConfigSchema = z.object({
    * unattended; it becomes "due" so you decide. 0 = always post late posts.
    */
   lateGraceMinutes: z.number().int().min(0).default(60),
-  /** A few of your own past posts; agents (get_settings) and the operator imitate their voice. */
+  /** A few of your own past posts; agents (get_settings) imitate their voice. */
   voice: z.array(z.string()).default([]),
   /**
    * Human approval of what agents queue. "agents": nothing an agent (MCP, API, CLI, the operator) schedules or publishes
@@ -59,26 +50,6 @@ const ConfigSchema = z.object({
     .default({ load: [], disable: [], settings: {} }),
   /** Daily summary to the approval chats (Telegram/Discord) at this local time; null = off. Urgent things are sent at once. */
   digest: z.object({ time: hhmm.nullable().default("08:30") }).default({ time: "08:30" }),
-  /**
-   * The built-in operator: Claude running unattended with Yaypost's tools, following your brief (operator.md).
-   * It runs at `runAt` local times on `days`, when you ask (UI, Telegram /run), and when you request changes on its posts.
-   */
-  operator: z
-    .object({
-      enabled: z.boolean().default(false),
-      days: days.default("daily"),
-      runAt: z.array(hhmm).default(["08:00"]),
-      briefPath: z.string().default("operator.md"),
-      maxToolCalls: z.number().int().min(1).max(200).default(40),
-      maxRunsPerDay: z.number().int().min(1).max(100).default(12),
-      /**
-       * Remote MCP servers (Streamable HTTP) whose tools the operator may use, e.g. web search. Only tools marked
-       * read-only are offered, unless `tools` lists the ones to allow. Header values may use ${ENV_VAR}; a header whose
-       * variable is unset is left out, so a key in .env is optional.
-       */
-      mcpServers: z.array(McpServer).default(DEFAULT_MCP_SERVERS),
-    })
-    .default({ enabled: false, days: "daily", runAt: ["08:00"], briefPath: "operator.md", maxToolCalls: 40, maxRunsPerDay: 12, mcpServers: DEFAULT_MCP_SERVERS }),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -93,7 +64,6 @@ const DEFAULT_FILE = {
   voice: [],
   approval: { require: "agents", except: [] },
   digest: { time: "08:30" },
-  operator: { enabled: false, days: "daily", runAt: ["08:00"], briefPath: "operator.md" },
 };
 
 let cache: { mtimeMs: number; config: Config } | undefined;
@@ -195,26 +165,6 @@ function slotInstants(day: LocalDay, config: Config): Date[] {
     .map((min) => new TZDate(day.y, day.m, day.d, Math.floor(min / 60), min % 60, config.timezone).getTime())
     .filter((ms) => !seen.has(ms) && seen.add(ms))
     .map((ms) => new Date(ms));
-}
-
-/**
- * Next instant after `after` that is one of `times` (local HH:MM) on one of `days` ("daily", "mon-fri"…), in the
- * configured timezone. For the operator's and digest's own schedules (they don't take posting slots).
- */
-export function nextLocalTime(days: string, times: string[], after = new Date()): Date | null {
-  const config = getConfig();
-  const allowed = parseDays(days);
-  if (!allowed || !times.length) return null;
-  const mins = [...new Set(times.map(toMinutes))].sort((a, b) => a - b);
-  for (let i = 0; i <= 8; i++) {
-    const day = localDay(after.getTime(), config.timezone, i);
-    if (!allowed.has(day.weekday)) continue;
-    for (const min of mins) {
-      const at = new Date(new TZDate(day.y, day.m, day.d, Math.floor(min / 60), min % 60, config.timezone).getTime());
-      if (at > after) return at;
-    }
-  }
-  return null;
 }
 
 /** Today's date (YYYY-MM-DD) in the configured timezone. */

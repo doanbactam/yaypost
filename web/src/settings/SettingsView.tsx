@@ -1,23 +1,22 @@
 // Settings, laid out like ChatGPT's and Claude's: a section list on the left (a scrolling strip on phones), one
 // section at a time on the right as label/value rows. Each section has its own URL (/settings/<section>).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, ExternalLink, Info, LoaderCircle, PenLine, Play, Puzzle, Settings2, Sparkles, Trash2, Users, X, type LucideIcon } from "lucide-react";
+import { Bot, Check, ExternalLink, Info, PenLine, Puzzle, Settings2, Sparkles, Trash2, Users, X, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Feedback, Health } from "../../../shared/types.ts";
-import { api, type ModelChoice, type OperatorModels } from "../api.ts";
+import { api } from "../api.ts";
 import { Card, Code, Row } from "../components/Card.tsx";
 import { Tabs } from "../components/Tabs.tsx";
 import { Tip } from "../components/Tip.tsx";
 import { toast, toastError } from "../components/Toasts.tsx";
 import { Accounts } from "../connect/Accounts.tsx";
-import { RunList } from "../inbox/InboxView.tsx";
 import { Reminders } from "../connect/Reminders.tsx";
 import { Webhooks } from "../connect/Webhooks.tsx";
 import { useControl } from "../lib/control.ts";
 import { useAccounts } from "../lib/platforms.tsx";
 import { navigate, openPost, type SettingsSection } from "../lib/router.ts";
-import { formatWhen, timeAgo } from "../lib/time.ts";
-import { cx, providerName } from "../lib/util.ts";
+import { timeAgo } from "../lib/time.ts";
+import { cx } from "../lib/util.ts";
 import { PluginsView } from "../plugins/PluginsView.tsx";
 import { SlotsButton } from "../queue/SlotsDialog.tsx";
 import { TimezonePicker } from "../components/TimezonePicker.tsx";
@@ -64,7 +63,7 @@ export function SettingsView({ health, section }: { health: Health; section: Set
               <h2 className="mb-2 hidden text-base font-semibold lg:block">{SECTIONS.find((s) => s.id === section)!.label}</h2>
               {section === "general" && <General health={health} />}
               {section === "accounts" && <Accounts />}
-              {section === "personalization" && <Personalization health={health} />}
+              {section === "personalization" && <Personalization />}
               {section === "agents" && (
                 <div className="space-y-7">
                   <AgentSetup health={health} />
@@ -147,95 +146,13 @@ function General({ health }: { health: Health }) {
   );
 }
 
-/** What agents work from: the model, the operator, the voice samples and, like ChatGPT's memory, every note you left. */
-function Personalization({ health }: { health: Health }) {
+/** What agents work from: the voice samples and, like ChatGPT's memory, every note you left. */
+function Personalization() {
   const { data: config } = useQuery({ queryKey: ["config"], queryFn: api.config });
-  const qc = useQueryClient();
-  const { data: operator } = useQuery({
-    // Under ["operator"], so starting or stopping a run anywhere (here, the Inbox) refreshes it at once.
-    queryKey: ["operator", "status"],
-    queryFn: api.operatorStatus,
-    refetchInterval: (q) => (q.state.data?.running ? 5_000 : 30_000),
-  });
-  // Same cache as the Inbox's operator popover.
-  const { data: runs } = useQuery({
-    queryKey: ["operator", "runs"],
-    queryFn: () => api.operatorRuns(5),
-    refetchInterval: operator?.running ? 5_000 : 60_000,
-  });
-  const [task, setTask] = useState("");
-  const run = useMutation({
-    mutationFn: () => api.runOperator(task.trim() || undefined),
-    onSuccess: () => {
-      setTask("");
-      toast({ title: "Operator started", description: "Anything it queues waits in the Inbox for you." });
-      for (const key of ["operator", "control"]) void qc.invalidateQueries({ queryKey: [key] });
-    },
-    onError: (e) => toastError("Couldn't start the operator", e),
-  });
   const { data: feedback } = useQuery({ queryKey: ["feedback"], queryFn: () => api.feedback() });
-  const tz = health.timezone;
 
   return (
     <div>
-      <Row label="Model">
-        {health.ai.configured ? (
-          <ModelPicker />
-        ) : (
-          <Status ok={false} value="Not set" note="Set ANTHROPIC_API_KEY (Claude) or ZAI_API_KEY (GLM) in .env, then restart." />
-        )}
-      </Row>
-      <Row label="Operator">
-        {operator && (
-          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-            {operator.running ? (
-              <span className="flex items-center gap-2 text-sm text-ink">
-                <LoaderCircle size={13} className="animate-spin text-sky-600" /> Running
-              </span>
-            ) : (
-              <Status
-                ok={operator.reason ? false : operator.enabled ? true : null}
-                value={operator.reason ? "Can't run" : operator.enabled ? (operator.nextRunAt ? `Next ${formatWhen(operator.nextRunAt, tz)}` : "On") : "Schedule off"}
-                note={operator.reason ?? (operator.enabled ? "Runs on its schedule, following operator.md." : "Runs only when you start it. Schedule it in Inbox › Operator.")}
-              />
-            )}
-            {!operator.reason && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  run.mutate();
-                }}
-                className="flex items-center gap-2"
-              >
-                <input
-                  value={task}
-                  onChange={(e) => setTask(e.target.value)}
-                  maxLength={2000}
-                  placeholder="Task (optional)"
-                  aria-label="Task for this run (optional)"
-                  className="h-8 w-44 min-w-0 rounded-lg border border-line bg-canvas px-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-line-strong sm:w-56"
-                />
-                <Tip content={operator.running ? "Run again after this one finishes" : "Without a task, it does the regular work in operator.md."}>
-                  <button
-                    type="submit"
-                    disabled={run.isPending}
-                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-ink px-2.5 text-xs font-medium whitespace-nowrap text-canvas hover:opacity-90 disabled:opacity-50"
-                  >
-                    {run.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <Play size={13} />}
-                    {operator.running ? "Queue run" : "Run now"}
-                  </button>
-                </Tip>
-              </form>
-            )}
-          </div>
-        )}
-      </Row>
-      {/* -mt-px: the list's top hairline sits on the row's. */}
-      {!!runs?.length && (
-        <div className="-mt-px border-b border-line pb-3">
-          <RunList runs={runs} />
-        </div>
-      )}
       <Row label="Voice samples">
         <Tip content="Past posts agents imitate (voice in yaypost.config.json).">
           <span className="cursor-help text-sm text-ink tabular-nums">{config?.voiceCount ?? "…"}</span>
@@ -256,70 +173,6 @@ function Personalization({ health }: { health: Health }) {
       <ul className="mt-1">
         {feedback?.map((f) => <MemoryItem key={f.id} item={f} />)}
       </ul>
-    </div>
-  );
-}
-
-/** Switch the operator's model; providers without a key in .env show but can't be picked. Applies from the next run. */
-function ModelPicker() {
-  const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["operator", "models"], queryFn: api.operatorModels });
-  const applied = (next: OperatorModels) => {
-    qc.setQueryData(["operator", "models"], next);
-    for (const key of ["health", "operator"]) void qc.invalidateQueries({ queryKey: [key] });
-  };
-  const set = useMutation({
-    mutationFn: api.setOperatorModel,
-    onSuccess: (next) => {
-      applied(next);
-      toast({ title: `Operator now uses ${next.current?.model}`, description: "From its next run.", tone: "success" });
-    },
-    onError: (e) => toastError("Couldn't switch the model", e),
-  });
-  const reset = useMutation({ mutationFn: api.resetOperatorModel, onSuccess: applied, onError: (e) => toastError("Couldn't reset the model", e) });
-  if (!data?.current) return null;
-  const { current, default: fallback } = data;
-  const isDefault = (p: string, m: string) => fallback?.provider === p && fallback.model === m;
-
-  return (
-    <div className="flex items-center gap-2">
-      {data.overridden && fallback && (
-        <Tip content={`Back to .env: ${providerName(fallback.provider)} · ${fallback.model}`}>
-          <button
-            onClick={() => reset.mutate()}
-            disabled={reset.isPending}
-            className="h-8 rounded-lg px-2 text-xs font-medium text-ink-3 hover:bg-subtle hover:text-ink disabled:opacity-50"
-          >
-            Reset
-          </button>
-        </Tip>
-      )}
-      <span className="text-sm text-ink-3">{providerName(current.provider)}</span>
-      <select
-        aria-label="Operator model"
-        value={`${current.provider}:${current.model}`}
-        disabled={set.isPending || reset.isPending}
-        onChange={(e) => {
-          const [provider, ...model] = e.target.value.split(":");
-          set.mutate({ provider: provider as ModelChoice["provider"], model: model.join(":") });
-        }}
-        className="h-8 max-w-56 min-w-0 rounded-lg border border-line bg-canvas px-2 text-sm text-ink focus:border-line-strong disabled:opacity-50"
-      >
-        {data.providers.map((p) => {
-          // A model set in .env or through the API may not be in the list: keep it selectable.
-          const models = p.id === current.provider && !p.models.includes(current.model) ? [current.model, ...p.models] : p.models;
-          return (
-            <optgroup key={p.id} label={p.configured ? p.name : `${p.name} (no key in .env)`}>
-              {models.map((m) => (
-                <option key={m} value={`${p.id}:${m}`} disabled={!p.configured}>
-                  {m}
-                  {isDefault(p.id, m) ? " (default)" : ""}
-                </option>
-              ))}
-            </optgroup>
-          );
-        })}
-      </select>
     </div>
   );
 }

@@ -1,10 +1,16 @@
-// The operator as an MCP client: tools from remote MCP servers (web search and the like, operator.mcpServers),
-// connected for one run over Streamable HTTP. Only read-only tools are offered unless the config lists others,
-// so a third-party server can't make the operator change anything outside Yaypost.
+// The operator as an MCP client, connected for one run over Streamable HTTP: Yaypost itself (every tool, as any agent
+// gets them) and research servers (web search and the like). From a research server only read-only tools are offered,
+// so a third-party server can't make the operator change anything, and what they return is marked as untrusted.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { McpServerConfig } from "./config.ts";
+
+export interface McpServer {
+  url: string;
+  headers?: Record<string, string>;
+  /** Yaypost itself: all its tools under their own names, its results passed on as they are. */
+  trusted?: boolean;
+}
 
 const CONNECT_TIMEOUT = 15_000;
 const CALL_TIMEOUT = 120_000;
@@ -19,20 +25,9 @@ export interface ExternalTool {
 }
 
 /** Short name from the host: mcp.parallel.ai → parallel. */
-export function serverName(url: string): string {
+function serverName(url: string): string {
   const labels = new URL(url).hostname.split(".").filter((l) => !["mcp", "www", "api", "search"].includes(l));
   return (labels[0] ?? "mcp").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 20) || "mcp";
-}
-
-/** Header values with ${VAR} taken from the environment; a header with an unset variable is dropped. */
-function resolveHeaders(headers: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers)) {
-    let missing = false;
-    const value = v.replace(/\$\{(\w+)\}/g, (_, name: string) => process.env[name]?.trim() || ((missing = true), ""));
-    if (!missing) out[k] = value;
-  }
-  return out;
 }
 
 function untrusted(server: string, r: CallToolResult): CallToolResult {
@@ -45,20 +40,23 @@ export interface Connected {
   tools: ExternalTool[];
   /** One line per server that couldn't be used. */
   errors: string[];
+  /** The trusted server's instructions for agents (Yaypost's MCP instructions), if it was reached. */
+  instructions: string | undefined;
   close(): Promise<void>;
 }
 
 /** Connect every server in parallel; servers that fail are reported, the rest are used. */
-export async function connectServers(servers: McpServerConfig[]): Promise<Connected> {
+export async function connectServers(servers: McpServer[]): Promise<Connected> {
   const clients: Client[] = [];
   const tools: ExternalTool[] = [];
   const errors: string[] = [];
   const used = new Set<string>();
+  let instructions: string | undefined;
 
   const results = await Promise.allSettled(
     servers.map(async (s) => {
       const client = new Client({ name: "yaypost-operator", version: "1" });
-      const transport = new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: resolveHeaders(s.headers) } });
+      const transport = new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: s.headers ?? {} } });
       await client.connect(transport, { timeout: CONNECT_TIMEOUT });
       clients.push(client);
       const { tools: listed } = await client.listTools(undefined, { timeout: CONNECT_TIMEOUT });
@@ -68,12 +66,31 @@ export async function connectServers(servers: McpServerConfig[]): Promise<Connec
 
   results.forEach((r, i) => {
     const url = servers[i]!.url;
-    if (r.status === "rejected") return void errors.push(`${serverName(url)}: ${String((r.reason as Error)?.message ?? r.reason).slice(0, 200)}`);
+    const label = servers[i]!.trusted ? "Yaypost" : serverName(url);
+    if (r.status === "rejected") return void errors.push(`${label}: ${String((r.reason as Error)?.message ?? r.reason).slice(0, 200)}`);
     const { s, client, listed } = r.value;
+    if (s.trusted) {
+      instructions = client.getInstructions();
+      for (const t of listed) {
+        tools.push({
+          name: t.name,
+          description: t.description ?? t.name,
+          inputSchema: t.inputSchema,
+          run: async (args, signal) => {
+            try {
+              return (await client.callTool({ name: t.name, arguments: (args ?? {}) as Record<string, unknown> }, undefined, { signal, timeout: CALL_TIMEOUT })) as CallToolResult;
+            } catch (err) {
+              return { isError: true, content: [{ type: "text", text: (err as Error).message }] };
+            }
+          },
+        });
+      }
+      return;
+    }
     let name = serverName(url);
     for (let n = 2; used.has(name); n++) name = `${serverName(url)}${n}`;
     used.add(name);
-    const allowed = listed.filter((t) => (s.tools ? s.tools.includes(t.name) : t.annotations?.readOnlyHint === true));
+    const allowed = listed.filter((t) => t.annotations?.readOnlyHint === true);
     for (const t of allowed) {
       tools.push({
         // Anthropic tool names: [a-zA-Z0-9_-]{1,64}.
@@ -95,6 +112,7 @@ export async function connectServers(servers: McpServerConfig[]): Promise<Connec
   return {
     tools,
     errors,
+    instructions,
     close: async () => void (await Promise.allSettled(clients.map((c) => c.close()))),
   };
 }
