@@ -1,0 +1,40 @@
+{
+  "name": "discord-approvals",
+  "version": "1.0.0",
+  "description": "Approval channel on Discord: a bot posts approval requests with buttons and receives presses over the Gateway (no public URL, no privileged intents).",
+  "private": true,
+  "keywords": [
+    "yaypost-plugin"
+  ],
+  "yaypost": {
+    "apiVersion": 1,
+    "entry": "index.ts",
+    "settings": [
+      {
+        "key": "botToken",
+        "label": "Bot token",
+        "secret": true,
+        "required": true,
+        "env": "DISCORD_APPROVAL_BOT_TOKEN",
+        "help": "discord.com/developers → your app → Bot → Reset Token. Invite the bot with View Channel and Send Messages."
+      },
+      {
+        "key": "channelId",
+        "label": "Channel id",
+        "required": true,
+        "env": "DISCORD_APPROVAL_CHANNEL_ID",
+        "help": "Type /channel-id in the channel and the bot replies with it (or Developer Mode → right-click the channel → Copy Channel ID). A channel link works too."
+      },
+      {
+        "key": "approverIds",
+        "label": "Who may decide",
+        "env": "DISCORD_APPROVER_IDS",
+        "placeholder": "user ids, comma-separated",
+        "help": "Empty: anyone who can see the channel."
+      }
+    ]
+  },
+  "peerDependencies": {
+    "yaypost": "*"
+  }
+}

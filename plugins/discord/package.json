@@ -1,0 +1,9 @@
+{
+  "name": "discord",
+  "version": "1.0.0",
+  "description": "Publish to a Discord channel via a webhook: a thread becomes consecutive messages, images with alt text, no mentions pinged.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

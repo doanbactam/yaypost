@@ -1,0 +1,7 @@
+# Supply-chain defense: only install package versions published at least 1 day ago. Do not disable.
+minimumReleaseAge: 1440
+
+autoInstallPeers: false
+
+onlyBuiltDependencies:
+  - esbuild

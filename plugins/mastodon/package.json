@@ -1,0 +1,9 @@
+{
+  "name": "mastodon",
+  "version": "1.0.0",
+  "description": "Publish to any Mastodon instance with an access token: threads as replies, images with alt text, idempotent retries, public metrics.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

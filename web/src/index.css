@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* Semantic colour tokens; values flip with the system colour scheme. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+}
+
+@theme {
+  --animate-rise: rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade: fade 140ms ease-out;
+  --animate-slide-in: slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(16px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+}
+
+/* Cool steel paper with one cobalt accent: the accent marks what needs you (your decisions, the active stage, focus). */
+:root {
+  color-scheme: light dark;
+  --canvas: #f2f3f1;
+  --surface: #fcfcfb;
+  --subtle: #e7e9e5;
+  --line: #dfe1dc;
+  --line-strong: #c9ccc5;
+  --ink: #14161a;
+  --ink-2: #565b63;
+  --ink-3: #8f949b;
+  --ai: #2f45d8;
+  --ai-soft: #e3e7fb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0e1012;
+    --surface: #15181b;
+    --subtle: #1d2125;
+    --line: #262a2f;
+    --line-strong: #353a40;
+    --ink: #e9ebee;
+    --ink-2: #a0a6ae;
+    --ink-3: #676d75;
+    --ai: #8d9cff;
+    --ai-soft: #1c2142;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ai) 70%, transparent);
+  outline-offset: 2px;
+}
+
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--ai) 28%, transparent);
+}
+
+kbd {
+  font-family: inherit;
+}
+
+/* While a popover opening upward (the time picker in the composer footer) is open, toasts move to the top so they never cover it. */
+:root:has([data-popover][data-side="top"]) [data-toaster] {
+  top: 1rem;
+  bottom: auto;
+}
+
+/* Base UI portals: popups stack above the app; iOS 26+ backdrops cover the whole visual viewport. */
+#root {
+  isolation: isolate;
+}
+
+body {
+  position: relative;
+}

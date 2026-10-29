@@ -1,0 +1,38 @@
+{
+  "timezone": "Asia/Ho_Chi_Minh",
+  "maxChars": 280,
+  "slots": [
+    {
+      "days": "mon-fri",
+      "from": "09:00",
+      "to": "16:00",
+      "everyMinutes": 60
+    },
+    {
+      "days": "sat,sun",
+      "times": [
+        "10:00"
+      ]
+    }
+  ],
+  "schedulerIntervalSeconds": 15,
+  "lateGraceMinutes": 60,
+  "voice": [],
+  "approval": {
+    "require": "agents",
+    "except": []
+  },
+  "digest": {
+    "time": "08:30"
+  },
+  "operator": {
+    "enabled": false,
+    "days": "daily",
+    "runAt": [
+      "08:00"
+    ],
+    "briefPath": "operator.md",
+    "maxToolCalls": 40,
+    "maxRunsPerDay": 12
+  }
+}

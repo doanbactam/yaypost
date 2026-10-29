@@ -1,0 +1,9 @@
+{
+  "name": "threads",
+  "version": "1.0.0",
+  "description": "Publish to Threads (Meta) via the Threads Graph API: threads as replies, images and carousels fetched from PUBLIC_URL, insights.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}

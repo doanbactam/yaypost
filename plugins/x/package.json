@@ -1,0 +1,9 @@
+{
+  "name": "x",
+  "version": "1.0.0",
+  "description": "Publish to X (Twitter) with your own API keys (OAuth 1.0a): threads as replies, images with alt text, resume after a failure, public metrics.",
+  "private": true,
+  "keywords": ["yaypost-plugin"],
+  "yaypost": { "apiVersion": 1, "entry": "index.ts" },
+  "peerDependencies": { "yaypost": "*" }
+}
