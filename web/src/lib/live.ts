@@ -5,7 +5,6 @@ import { APP_EVENT_TYPES, type AppEvent, type Post } from "../../../shared/types
 import { api } from "../api.ts";
 import { dismissToast, toast, toastError } from "../components/Toasts.tsx";
 import { askerLabel } from "./actors.ts";
-import { notifyLocally } from "./reminders.ts";
 import { navigate, openPost } from "./router.ts";
 import { copyText, firstLine } from "./util.ts";
 
@@ -57,7 +56,6 @@ function announceDue(post: Post) {
     duration: 0,
     actions: [{ label: "Open", primary: true, onClick: () => openPost(post.id) }],
   });
-  if (document.hidden) void notifyLocally("Not posted yet", body, `/?post=${post.id}`, `due-${post.id}`);
 }
 
 export function useLiveEvents() {

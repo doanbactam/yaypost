@@ -1,4 +1,4 @@
-// In-process event bus. The repo emits; SSE, webhooks and push notifications listen.
+// In-process event bus. The repo emits; SSE, webhooks and approval chats listen.
 import { EventEmitter } from "node:events";
 import type { AppEvent } from "../shared/types.ts";
 

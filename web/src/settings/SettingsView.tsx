@@ -10,7 +10,6 @@ import { Tabs } from "../components/Tabs.tsx";
 import { Tip } from "../components/Tip.tsx";
 import { toast, toastError } from "../components/Toasts.tsx";
 import { Accounts } from "../connect/Accounts.tsx";
-import { Reminders } from "../connect/Reminders.tsx";
 import { Webhooks } from "../connect/Webhooks.tsx";
 import { useControl } from "../lib/control.ts";
 import { useAccounts } from "../lib/platforms.tsx";
@@ -131,7 +130,6 @@ function General({ health }: { health: Health }) {
           note={health.auth.required ? "Agents send Authorization: Bearer <AUTH_TOKEN>." : "Fine on 127.0.0.1. Set AUTH_TOKEN before exposing the port."}
         />
       </Row>
-      <Reminders />
       {config && (
         <>
           <Row label="Timezone">

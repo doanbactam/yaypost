@@ -12,7 +12,6 @@ import { env, ROOT, VERSION } from "./env.ts";
 import { errorResponse } from "./http.ts";
 import { llmsRoutes } from "./llms.ts";
 import { mcpRoutes } from "./mcp.ts";
-import { pushRoutes } from "./push.ts";
 
 export { VERSION };
 export const app = new OpenAPIHono();
@@ -30,7 +29,6 @@ app.use("/llms-full.txt", requireAuth);
 app.route("/api", apiRoutes);
 app.route("/api", controlRoutes);
 app.route("/api", pluginRoutes);
-app.route("/api/push", pushRoutes);
 app.route("/media", mediaFileRoutes);
 app.route("/mcp", mcpRoutes);
 app.route("/", llmsRoutes);
@@ -61,7 +59,6 @@ app.doc31("/openapi.json", (c) => ({
     { name: "Media", description: "Images attached to posts (PNG, JPEG, WebP, GIF; ≤5 MB; ≤4 per post)." },
     { name: "Events", description: "Server-Sent Events stream of every state change." },
     { name: "Webhooks", description: "HMAC-signed outbound webhooks for the same events." },
-    { name: "Notifications", description: "Web Push reminders for the browser." },
     { name: "System", description: "Health, config, version." },
   ],
 }));

@@ -1,9 +1,8 @@
-// Single process: HTTP server + scheduler loop + event fan-out (webhooks, web push).
+// Single process: HTTP server + scheduler loop + event fan-out (webhooks, approval chats).
 import { serve } from "@hono/node-server";
 import { app } from "./app.ts";
 import { getConfig } from "./config.ts";
 import { env, publicUrl, VERSION } from "./env.ts";
-import { sendToAll, startPush } from "./push.ts";
 import { startAccountChecks } from "./accounts.ts";
 import { startAudit } from "./audit.ts";
 import { alert, channelStatuses, startNotify } from "./notify/hub.ts";
@@ -20,11 +19,9 @@ if (recovered) console.warn(`⚠ ${recovered} post(s) were mid-publish when the 
 
 startAudit();
 startWebhooks();
-startPush();
 const stopNotify = startNotify();
 startAccountChecks((a) => {
   console.warn(`⚠ ${a.label}: ${a.lastError}`);
-  void sendToAll({ title: `${a.label} needs attention`, body: a.lastError ?? "", url: "/settings/accounts", postId: null, tag: `account-${a.id}` });
   alert(`⚠ ${a.label} needs attention: ${a.lastError ?? ""}\nPosts to it will fail until you reconnect it in Yaypost.`);
 });
 const stopScheduler = startScheduler();

@@ -31,7 +31,6 @@ export const env = {
   /** Extra hostnames accepted in the Host header when no AUTH_TOKEN is set (comma-separated). */
   allowedHosts: (str("ALLOWED_HOSTS") ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
 
-  vapidSubject: str("VAPID_SUBJECT") ?? "mailto:yaypost@localhost",
 };
 
 if (env.publicUrl) {

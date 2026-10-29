@@ -184,6 +184,11 @@ const MIGRATIONS = [
   DROP TABLE operator_runs;
   DELETE FROM kv WHERE key = 'ai.model';
   `,
+  // Browser push reminders are gone: the approval chat (and the open web UI) already tells you everything they did.
+  `
+  DROP TABLE push_subscriptions;
+  DELETE FROM kv WHERE key = 'vapid';
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

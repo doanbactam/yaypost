@@ -173,7 +173,7 @@ const DAY = 86_400_000;
 
 /**
  * Re-check every account once a day so an expired token (Threads and LinkedIn tokens last about 60 days) shows up
- * as an account error, with a browser notification, before a scheduled post fails on it.
+ * as an account error, with an alert in the approval chats, before a scheduled post fails on it.
  */
 export function startAccountChecks(onNewError: (account: Account) => void): () => void {
   const run = async () => {

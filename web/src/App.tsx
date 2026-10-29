@@ -1,6 +1,6 @@
 // App shell: auth gate, sidebar + view routing, command palette, live events, global shortcuts.
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bell, CalendarClock, CircleCheck, CirclePause, FileText, Inbox, Menu, PenLine, Plug, Plus, Puzzle, Search, Settings2, Sparkles, Users } from "lucide-react";
+import { BookOpen, CalendarClock, CircleCheck, CirclePause, FileText, Inbox, Menu, PenLine, Plug, Plus, Puzzle, Search, Settings2, Sparkles, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Health } from "../../shared/types.ts";
 import { api, ApiError, auth } from "./api.ts";
@@ -8,7 +8,6 @@ import { Composer } from "./composer/Composer.tsx";
 
 import { InboxView } from "./inbox/InboxView.tsx";
 import { SettingsView } from "./settings/SettingsView.tsx";
-import { useReminders } from "./connect/Reminders.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { Logo, Sidebar } from "./components/Sidebar.tsx";
 import { Toaster } from "./components/Toasts.tsx";
@@ -101,7 +100,6 @@ function Shell({ health }: { health: Health }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const reminders = useReminders();
   const postId = params.get("post");
   useLiveEvents();
 
@@ -120,7 +118,6 @@ function Shell({ health }: { health: Health }) {
     return () => removeEventListener("keydown", onKey);
   }, []);
 
-  const { enable } = reminders;
   const commands = useMemo<Command[]>(
     () => [
       { id: "new", group: "Go", title: "New draft", icon: Plus, keywords: "compose write create", run: () => newDraft() },
@@ -145,9 +142,8 @@ function Shell({ health }: { health: Health }) {
       { id: "plugins", group: "Agents", title: "Plugins (platforms & approval chats)", icon: Puzzle, keywords: "install extensions npm", run: () => navigate("/settings/plugins") },
       { id: "docs", group: "Agents", title: "Open API reference", icon: BookOpen, keywords: "openapi rest docs", run: () => open("/docs", "_blank") },
       { id: "pause", group: "Control", title: "Pause or resume publishing", icon: CirclePause, keywords: "kill switch stop", run: () => navigate("/") },
-      { id: "reminders", group: "Settings", title: "Enable reminders", icon: Bell, keywords: "notifications push", run: () => enable.mutate() },
     ],
-    [enable],
+    [],
   );
   useCommands("app", commands);
 

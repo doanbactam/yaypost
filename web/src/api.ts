@@ -266,11 +266,6 @@ export const api = {
   deleteWebhook: (id: string) => call<{ ok: true }>("DELETE", `/api/webhooks/${id}`),
   testWebhook: (id: string) => call<{ ok: boolean; status: number | null; error: string | null }>("POST", `/api/webhooks/${id}/test`),
 
-  pushPublicKey: () => call<{ publicKey: string }>("GET", "/api/push/public-key").then((r) => r.publicKey),
-  pushSubscribe: (sub: PushSubscriptionJSON) => call<{ ok: true }>("POST", "/api/push/subscribe", { body: sub }),
-  pushUnsubscribe: (endpoint: string) => call<{ ok: true }>("POST", "/api/push/unsubscribe", { body: { endpoint } }),
-  pushTest: () => call<{ ok: true; message: string }>("POST", "/api/push/test"),
-
 
   // The person's side: approvals, the kill switch, the audit log, approval chats.
   control: () => call<ControlState>("GET", "/api/control"),
