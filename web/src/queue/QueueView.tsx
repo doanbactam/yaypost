@@ -1,11 +1,10 @@
 // Queue: the next 14 days grouped by day (posts + open slots), with due/failed actions, and the published list.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calendar1, CalendarClock, CalendarDays, CircleCheck, Columns3, List, ExternalLink, Image, LoaderCircle, Plus, RotateCcw, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CalendarClock, CircleCheck, ExternalLink, Image, LoaderCircle, Plus, RotateCcw, TriangleAlert } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { Health, Post, QueueDay, QueueItem } from "../../../shared/types.ts";
 import { api } from "../api.ts";
 import { ApprovalPill } from "../components/Approval.tsx";
-import { CalendarView, type CalendarMode } from "./CalendarView.tsx";
 import { SlotsDialog } from "./SlotsDialog.tsx";
 import { TimezonePicker } from "../components/TimezonePicker.tsx";
 import { Tip } from "../components/Tip.tsx";
@@ -40,32 +39,11 @@ interface Props {
   tab: "upcoming" | "published";
 }
 
-type Layout = "list" | CalendarMode;
-const LAYOUT_KEY = "yaypost.queueLayout";
-const wide = () => matchMedia("(min-width: 640px)").matches;
-
 export function QueueView({ health, tab }: Props) {
-  const [stored, setStored] = useState<Layout>(() => {
-    const saved = localStorage.getItem(LAYOUT_KEY);
-    return saved === "day" || saved === "week" || saved === "month" ? saved : "list";
-  });
-  const [isWide, setWide] = useState(wide);
-  useEffect(() => {
-    const mq = matchMedia("(min-width: 640px)");
-    const on = () => setWide(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  // A 7-column grid is unreadable on a phone: narrow screens get the list or a single day.
-  const layout: Layout = isWide || stored === "day" ? stored : "list";
   const [slots, setSlots] = useState(false);
-  const setLayout = (l: Layout) => {
-    setStored(l);
-    localStorage.setItem(LAYOUT_KEY, l);
-  };
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className={cx("mx-auto w-full px-4 pb-24 sm:px-6", layout === "list" ? "max-w-[720px]" : "max-w-[1100px]")}>
+      <div className="mx-auto w-full max-w-[720px] px-4 pb-24 sm:px-6">
         <header className="flex flex-wrap items-center justify-between gap-3 pt-6 pb-4">
           <span className="flex items-center gap-2 text-xs text-ink-3">
             <TimezonePicker value={health.timezone} className="-ml-1.5 rounded-full px-1.5 py-1 hover:bg-subtle hover:text-ink" />
@@ -79,24 +57,6 @@ export function QueueView({ health, tab }: Props) {
               </button>
             </Tip>
           </span>
-          <div className="flex items-center gap-2">
-          {(
-            <Tabs
-              label="Layout"
-              value={layout}
-              onChange={setLayout}
-              tabs={[
-                { value: "list", title: "List", label: (<><List size={14} /><span className="sr-only">List</span></>) },
-                { value: "day" as const, title: "Day", label: (<><Calendar1 size={14} /><span className="sr-only">Day</span></>) },
-                ...(isWide
-                  ? [
-                      { value: "week" as const, title: "Week", label: (<><Columns3 size={14} /><span className="sr-only">Week</span></>) },
-                      { value: "month" as const, title: "Month", label: (<><CalendarDays size={14} /><span className="sr-only">Month</span></>) },
-                    ]
-                  : []),
-              ]}
-            />
-          )}
           <Tabs
             label="Queue"
             value={tab}
@@ -106,11 +66,8 @@ export function QueueView({ health, tab }: Props) {
               { value: "published", label: "Published" },
             ]}
           />
-          </div>
         </header>
-        {layout !== "list" ? (
-          <CalendarView key={tab} mode={layout} tz={health.timezone} onMode={setLayout} published={tab === "published"} />
-        ) : tab === "published" ? (
+        {tab === "published" ? (
           <Published health={health} />
         ) : (
           <Upcoming health={health} />

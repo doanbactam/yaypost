@@ -1,8 +1,6 @@
-// One post in the thread: chrome-less auto-growing textarea, per-platform counter, images, drag handle.
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+// One post in the thread: chrome-less auto-growing textarea, per-platform counter, images.
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, GripVertical, ImagePlus, LoaderCircle, Lock, Trash2, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, ImagePlus, LoaderCircle, Lock, Trash2, TriangleAlert, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Segment } from "../../../shared/types.ts";
 import { api } from "../api.ts";
@@ -42,6 +40,8 @@ interface Props {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   onFocus?: () => void;
   onRemove: () => void;
+  /** Swap with the post above (-1) or below (1); null where it can't move (first, last, or next to a live post). */
+  onMove: { up: (() => void) | null; down: (() => void) | null };
   onFiles: (files: File[]) => void;
   onRemoveImage: (mediaId: string) => void;
   onEditImage: (mediaId: string) => void;
@@ -50,10 +50,6 @@ interface Props {
 const imageFiles = (list: FileList | null | undefined) => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
 
 export function PostCard(p: Props) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: p.segment.id,
-    disabled: p.readOnly,
-  });
   const local = useRef<HTMLTextAreaElement | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
@@ -77,33 +73,14 @@ export function PostCard(p: Props) {
   }, [p.segment.text]);
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cx("group/card relative flex gap-3 pb-3", isDragging && "z-10")}
-    >
+    <div className="group/card relative flex gap-3 pb-3">
       <div className="flex w-7 shrink-0 flex-col items-center pt-3">
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label={p.readOnly ? `Post ${p.index + 1}` : `Post ${p.index + 1}. Press space to reorder with arrow keys`}
-          disabled={p.readOnly}
-          className={cx(
-            "relative grid size-7 shrink-0 touch-none place-items-center rounded-full border border-line bg-surface text-xs font-medium text-ink-3 tabular-nums",
-            !p.readOnly && "cursor-grab hover:border-line-strong hover:text-ink active:cursor-grabbing",
-          )}
+        <span
+          aria-label={`Post ${p.index + 1}`}
+          className="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface text-xs font-medium text-ink-3 tabular-nums"
         >
-          <span className={cx(!p.readOnly && "group-hover/card:opacity-0 group-focus-within/card:opacity-0 [@media(hover:none)]:opacity-0")}>
-            {p.index + 1}
-          </span>
-          {!p.readOnly && (
-            <GripVertical
-              size={14}
-              className="absolute opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100 [@media(hover:none)]:opacity-100"
-            />
-          )}
-        </button>
+          {p.index + 1}
+        </span>
         {p.index < p.total - 1 && <div className="mt-1.5 -mb-3 w-px flex-1 bg-line" />}
       </div>
 
@@ -123,12 +100,9 @@ export function PostCard(p: Props) {
         }}
         className={cx(
           "min-w-0 flex-1 rounded-2xl border bg-surface px-4 pt-3 pb-2 transition-[border-color,box-shadow]",
-          isDragging && "shadow-xl shadow-black/10",
           over
             ? "border-red-300 focus-within:border-red-400 dark:border-red-900 dark:focus-within:border-red-700"
-            : isDragging
-              ? "border-line-strong"
-              : cx("border-line", !p.readOnly && "focus-within:border-line-strong focus-within:shadow-sm"),
+            : cx("border-line", !p.readOnly && "focus-within:border-line-strong focus-within:shadow-sm"),
           dropping && "border-ai ring-2 ring-ai/30",
         )}
       >
@@ -227,6 +201,23 @@ export function PostCard(p: Props) {
               </span>
             )}
             {p.meters.length <= 1 && <div className="flex-1" />}
+            {(
+              [
+                [p.onMove.up, ArrowUp, "up"],
+                [p.onMove.down, ArrowDown, "down"],
+              ] as const
+            ).map(([move, Icon, dir]) =>
+              move ? (
+                <button
+                  key={dir}
+                  onClick={move}
+                  aria-label={`Move post ${p.index + 1} ${dir}`}
+                  className="rounded-md p-1.5 opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100 hover:bg-subtle hover:text-ink focus:opacity-100 [@media(hover:none)]:opacity-100"
+                >
+                  <Icon size={15} />
+                </button>
+              ) : null,
+            )}
             {p.total > 1 && (
               <button
                 onClick={p.onRemove}

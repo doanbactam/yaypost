@@ -38,7 +38,7 @@ export function TimezonePicker({ value, className, children }: { value: string; 
   const save = useMutation({
     mutationFn: (tz: string) => api.saveTimezone(tz),
     onSuccess: (_, tz) => {
-      // Times show in this zone everywhere (queue, calendar, inbox): refetch it all.
+      // Times show in this zone everywhere (queue, composer, inbox): refetch it all.
       void qc.invalidateQueries();
       const from = value;
       toast({ title: `Timezone: ${pretty(tz)}`, tone: "success", actions: [{ label: "Undo", onClick: () => save.mutate(from) }] });

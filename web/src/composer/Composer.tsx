@@ -1,22 +1,17 @@
-// The composer ("Write"): a thread as sortable post cards (or one text area), autosaved, with scheduling and approval.
+// The composer ("Write"): a thread as post cards, autosaved, with scheduling and approval.
 // With connected accounts selected as destinations, each card counts per platform and accounts can get their own version.
-import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  AlignLeft,
   CalendarClock,
   Copy,
   Ellipsis,
-  Image as ImageIcon,
-  LayoutList,
   LoaderCircle,
   Plus,
   Send,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { joinThread, splitThread } from "../../../shared/thread.ts";
+import { splitThread } from "../../../shared/thread.ts";
 import type { Account, Health, Post, Segment } from "../../../shared/types.ts";
 import { api, ApiError } from "../api.ts";
 import { ApprovalPill } from "../components/Approval.tsx";
@@ -41,113 +36,12 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const LAST_TARGETS = "yaypost:lastTargets";
 
-/** "Posts 1–3 are already live on Bluesky". */
-const liveText = (n: number, where: string) => `${n === 1 ? "Post 1 is" : `Posts 1–${n} are`} already live on ${where}`;
-
-function pref(key: string, fallback: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === "1";
-  } catch {
-    return fallback;
-  }
-}
-function savePref(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // preferences are optional
-  }
-}
-
 /** Split a card whose text now contains "---" lines. A trailing separator yields a new empty card to type into. */
 function splitCard(value: string): string[] {
   const parts = splitThread(value);
   const pieces = value.split(new RegExp(SEPARATOR.source, "gm"));
   if (!parts.length || (pieces.length > 1 && !pieces[pieces.length - 1]!.trim())) parts.push("");
   return parts;
-}
-
-/** Dice similarity of character bigrams: how alike an edited post is to an old one (0..1). */
-function similarity(a: string, b: string): number {
-  if (a === b) return 1;
-  const grams = (t: string) => {
-    const m = new Map<string, number>();
-    for (let i = 0; i < t.length - 1; i++) m.set(t.slice(i, i + 2), (m.get(t.slice(i, i + 2)) ?? 0) + 1);
-    return m;
-  };
-  const A = grams(a);
-  const B = grams(b);
-  let shared = 0;
-  for (const [g, n] of A) shared += Math.min(n, B.get(g) ?? 0);
-  const total = a.length + b.length - 2;
-  return total > 0 ? (2 * shared) / total : 0;
-}
-
-/**
- * Text mode → segments, keeping each post's segment (id, images) wherever it can tell which post is which:
- * 1. posts whose text is unchanged (longest common subsequence against `base`, the thread when text mode opened,
- *    so an edit typed back restores every image where it was);
- * 2. unchanged posts that were moved;
- * 3. edited posts, matched within each gap between the anchors above to the most similar old post there.
- * Anything left is a new post without images.
- */
-function segmentsFromText(text: string, base: Segment[], prev: Segment[]): Segment[] {
-  const parts = splitThread(text);
-  if (!parts.length) return [{ ...(base[0] ?? blankSegment()), text: "" }];
-  const old = base.map((s) => s.text.trim());
-  const n = parts.length;
-  const m = old.length;
-
-  const lcs = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--) lcs[i]![j] = parts[i] === old[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
-  const match = new Array<number>(n).fill(-1);
-  for (let i = 0, j = 0; i < n && j < m; ) {
-    if (parts[i] === old[j]) match[i++] = j++;
-    else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) i++;
-    else j++;
-  }
-  const used = new Set(match.filter((j) => j >= 0));
-
-  parts.forEach((t, i) => {
-    if (match[i]! >= 0) return;
-    const j = old.findIndex((o, k) => !used.has(k) && o === t);
-    if (j >= 0) {
-      match[i] = j;
-      used.add(j);
-    }
-  });
-
-  for (let i = 0, lastBase = -1; i < n; ) {
-    if (match[i]! >= 0) {
-      lastBase = Math.max(lastBase, match[i]!);
-      i++;
-      continue;
-    }
-    let end = i;
-    while (end < n && match[end]! < 0) end++;
-    const nextBase = end < n ? match[end]! : m;
-    const free: number[] = [];
-    for (let j = lastBase + 1; j < nextBase; j++) if (!used.has(j)) free.push(j);
-    const pairs = free
-      .flatMap((j) => Array.from({ length: end - i }, (_, k) => ({ k: i + k, j, score: similarity(parts[i + k]!, old[j]!) })))
-      .sort((a, b) => b.score - a.score || Math.abs(a.k - i - (a.j - lastBase - 1)) - Math.abs(b.k - i - (b.j - lastBase - 1)));
-    for (const { k, j } of pairs) {
-      if (match[k]! < 0 && !used.has(j)) {
-        match[k] = j;
-        used.add(j);
-      }
-    }
-    i = end;
-  }
-
-  const baseIds = new Set(base.map((s) => s.id));
-  return parts.map((t, i): Segment => {
-    if (match[i]! >= 0) return { ...base[match[i]!]!, text: t };
-    const id = prev[i]?.id; // a post being typed keeps its id from one keystroke to the next
-    return id && !baseIds.has(id) ? { id, text: t, mediaIds: [] } : blankSegment(t);
-  });
 }
 
 interface Props {
@@ -208,7 +102,6 @@ export function Composer(props: Props) {
     .filter((info, i, all): info is NonNullable<typeof info> => !!info && !!(info.imageTypes || info.maxImageBytes) && all.findIndex((b) => b?.id === info.id) === i)
     .map((info) => ({ name: info.name, types: info.imageTypes, maxBytes: info.maxImageBytes }));
 
-  const [textMode, setTextMode] = useState(() => pref("yaypost:textMode", false));
   const [uploads, setUploads] = useState<Record<string, PendingUpload[]>>({});
   const [altFor, setAltFor] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -370,6 +263,18 @@ export function Composer(props: Props) {
     edit((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev));
     const neighbour = draft.thread?.[i > 0 ? i - 1 : 1];
     if (neighbour) focusCard(neighbour.id, "end");
+  };
+
+  /** Swap a post with its neighbour; live posts stay where they are and nothing moves above them. */
+  const moveOf = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (isLocked(i) || j < liveCount || j >= (draft.thread?.length ?? 0)) return null;
+    return () =>
+      edit((prev) => {
+        const next = [...prev];
+        [next[i], next[j]] = [next[j]!, next[i]!];
+        return next;
+      });
   };
 
   const onCardKeyDown = (seg: Segment) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -570,16 +475,10 @@ export function Composer(props: Props) {
     }
   };
 
-  const toggleText = () =>
-    setTextMode((v) => {
-      savePref("yaypost:textMode", !v);
-      return !v;
-    });
-
   // Latest handlers for global shortcuts and palette commands (registered once).
-  const actions = useRef({ schedule, queueShortcut, copyThread, toggleText, publishNow, setPickerOpen });
+  const actions = useRef({ schedule, queueShortcut, copyThread, publishNow, setPickerOpen });
   useEffect(() => {
-    actions.current = { schedule, queueShortcut, copyThread, toggleText, publishNow, setPickerOpen };
+    actions.current = { schedule, queueShortcut, copyThread, publishNow, setPickerOpen };
   });
 
   useEffect(() => {
@@ -610,7 +509,6 @@ export function Composer(props: Props) {
       { id: "queue", group: "Thread", title: "Add to queue", icon: CalendarClock, shortcut: keys.queue, run: () => a().queueShortcut() },
       { id: "pick", group: "Thread", title: "Schedule for a specific time…", icon: CalendarClock, run: () => a().setPickerOpen(true) },
       { id: "copy", group: "Thread", title: "Copy thread", icon: Copy, shortcut: keys.copy, run: () => void a().copyThread() },
-      { id: "text", group: "Thread", title: "Toggle text mode", icon: AlignLeft, keywords: "cards markdown plain", run: () => a().toggleText() },
     ];
     if (hasTargets) list.push({ id: "publish", group: "Thread", title: "Publish now", icon: Send, run: () => void a().publishNow() });
     return list;
@@ -629,8 +527,6 @@ export function Composer(props: Props) {
       </div>
     );
 
-  const showText = textMode && !viewLocked && liveCount === 0;
-
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -638,35 +534,6 @@ export function Composer(props: Props) {
           <StatusLabel post={post} saveState={draft.saveState} tz={health.timezone} />
           {post && <ApprovalPill post={post} className="max-sm:hidden" />}
           <div className="flex-1" />
-          {!viewLocked && (
-            <div role="group" aria-label="Editor mode" className="flex rounded-lg border border-line p-0.5">
-              {[
-                { on: !showText, icon: LayoutList, label: "Cards" },
-                { on: showText, icon: AlignLeft, label: "Text" },
-              ].map(({ on, icon: Icon, label }) => (
-                <button
-                  key={label}
-                  aria-pressed={on}
-                  onClick={() => !on && toggleText()}
-                  disabled={label === "Text" && liveCount > 0}
-                  title={
-                    label === "Cards"
-                      ? "One card per post"
-                      : liveCount > 0
-                        ? `Text mode is off for this thread: ${liveText(liveCount, live.where)} and can't be changed. Edit the rest as cards.`
-                        : "Whole thread as one text, posts separated by ---"
-                  }
-                  className={cx(
-                    "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                    on ? "bg-subtle text-ink" : "text-ink-3 enabled:hover:text-ink",
-                  )}
-                >
-                  <Icon size={14} />
-                  <span className="max-sm:hidden">{label}</span>
-                </button>
-              ))}
-            </div>
-          )}
           <Popover
             trigger={
               <button aria-label="More" className="grid size-8 place-items-center rounded-lg text-ink-2 hover:bg-subtle">
@@ -760,18 +627,8 @@ export function Composer(props: Props) {
                 <div className="h-28 animate-pulse rounded-2xl bg-subtle" />
                 <div className="h-20 animate-pulse rounded-2xl bg-subtle" />
               </div>
-            ) : showText ? (
-              <TextMode key={version ?? "shared"} thread={thread} meter={(t, images) => strictest(metersFor({ id: "", text: t, mediaIds: Array(images).fill("") }))} onChange={edit} />
             ) : (
-              <Cards
-                thread={thread}
-                onReorder={(e) => {
-                  const from = thread.findIndex((s) => s.id === e.active.id);
-                  const to = thread.findIndex((s) => s.id === e.over?.id);
-                  // Live posts stay where they are; nothing moves above them.
-                  if (from >= liveCount && to >= liveCount && from !== to) edit((prev) => arrayMove(prev, from, to));
-                }}
-              >
+              <div>
                 {thread.map((seg, i) => (
                   <PostCard
                     key={seg.id}
@@ -788,12 +645,13 @@ export function Composer(props: Props) {
                     onChange={(v) => onCardChange(seg.id, v)}
                     onKeyDown={onCardKeyDown(seg)}
                     onRemove={() => removePost(seg.id)}
+                    onMove={{ up: moveOf(i, -1), down: moveOf(i, 1) }}
                     onFiles={(files) => void addImages(seg.id, files)}
                     onRemoveImage={(mid) => edit((prev) => prev.map((s) => (s.id === seg.id ? { ...s, mediaIds: s.mediaIds.filter((m) => m !== mid) } : s)))}
                     onEditImage={setAltFor}
                   />
                 ))}
-              </Cards>
+              </div>
             )}
             </div>
 
@@ -814,7 +672,7 @@ export function Composer(props: Props) {
               <p className="mb-2 ml-10 text-xs text-ink-3">Every destination has its own version, so this shared thread isn't posted anywhere.</p>
             )}
 
-            {thread && !viewLocked && !showText && (
+            {thread && !viewLocked && (
               <div className="flex items-center gap-3 pl-10">
                 <button
                   onClick={() => addPost()}
@@ -861,89 +719,6 @@ export function Composer(props: Props) {
       </div>
 
       {altFor && <AltTextDialog mediaId={altFor} onClose={() => setAltFor(null)} />}
-    </div>
-  );
-}
-
-function Cards(p: { thread: Segment[]; onReorder: (e: DragEndEvent) => void; children: ReactNode }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={p.onReorder}>
-      <SortableContext items={p.thread.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-        <div>{p.children}</div>
-      </SortableContext>
-    </DndContext>
-  );
-}
-
-function TextMode(p: { thread: Segment[]; meter: (text: string, images: number) => Meter | null; onChange: (thread: Segment[]) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const sig = JSON.stringify(p.thread.map((s) => s.text));
-  // Raw text is local while typing; resync (and re-base the image mapping) when the thread changes from
-  // elsewhere (an agent, another device).
-  const [raw, setRaw] = useState(() => ({ text: joinThread(p.thread.map((s) => s.text)), sig, base: p.thread }));
-  if (raw.sig !== sig && JSON.stringify(splitThread(raw.text)) !== JSON.stringify(p.thread.map((s) => s.text.trim()).filter(Boolean))) {
-    setRaw({ text: joinThread(p.thread.map((s) => s.text)), sig, base: p.thread });
-  }
-  useLayoutEffect(() => {
-    const el = ref.current!;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight, 240)}px`;
-  }, [raw.text]);
-  const parts = splitThread(raw.text);
-  const kept = new Set(p.thread.flatMap((s) => s.mediaIds));
-  const dropped = raw.base.flatMap((s) => s.mediaIds).filter((m) => !kept.has(m)).length;
-  return (
-    <div className="ml-10">
-      <div className="rounded-2xl border border-line bg-surface px-4 py-3 focus-within:border-line-strong">
-        <textarea
-          ref={ref}
-          autoFocus
-          value={raw.text}
-          onChange={(e) => {
-            setRaw({ ...raw, text: e.target.value });
-            p.onChange(segmentsFromText(e.target.value, raw.base, p.thread));
-          }}
-          spellCheck
-          aria-label="Thread as text"
-          placeholder={"First post\n\n---\n\nSecond post"}
-          className="block w-full resize-none overflow-hidden bg-transparent text-base leading-relaxed placeholder:text-ink-3 sm:text-[17px]"
-        />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5 text-xs tabular-nums">
-        {parts.map((t, i) => {
-          const images = p.thread[i]?.mediaIds.length ?? 0;
-          const m = p.meter(t, images);
-          const over = m ? m.length > m.max : false;
-          return (
-            <span
-              key={i}
-              title={m ? `${m.length}/${m.max} on ${m.label}` : undefined}
-              className={cx(
-                "flex items-center gap-1 rounded-full px-2 py-0.5",
-                over ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-subtle text-ink-2",
-              )}
-            >
-              {i + 1} · {m ? (over ? `${m.platform !== "x" ? `${m.label} ` : ""}−${m.length - m.max}` : m.length) : t.length}
-              {images > 0 && (
-                <span className="flex items-center gap-0.5" title={`${images} image${images > 1 ? "s" : ""}`}>
-                  · <ImageIcon size={11} aria-label="images" /> {images}
-                </span>
-              )}
-            </span>
-          );
-        })}
-        <span className="px-1 text-ink-3">Separate posts with a line containing only ---</span>
-      </div>
-      {dropped > 0 && (
-        <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-          {dropped} image{dropped > 1 ? "s" : ""} belonged to a post you removed and will be dropped. Undo ({keys.undo}) to keep{" "}
-          {dropped > 1 ? "them" : "it"}.
-        </p>
-      )}
     </div>
   );
 }
